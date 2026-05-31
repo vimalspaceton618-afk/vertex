@@ -54,7 +54,7 @@ function detectBrowserRuntime(overridePath: string): boolean {
 }
 
 export function collectHealthStatus(): HealthStatus {
-  const workspaceRoot = process.env.CORTEX_WORKSPACE_ROOT || process.cwd();
+  const workspaceRoot = process.env.VERTEX_WORKSPACE_ROOT || process.cwd();
   const puppeteerExecutableOverride = process.env.PUPPETEER_EXECUTABLE_PATH || '';
   return {
     workspaceRoot,
@@ -89,7 +89,7 @@ export function collectHealthStatus(): HealthStatus {
 
 export function formatHealthReport(status: HealthStatus): string {
   return [
-    'CORTEX Health Check',
+    'VERTEX Health Check',
     `- Workspace root: ${status.workspaceRoot}`,
     `- Brain mode: ${status.brainMode}`,
     `- LLM key configured: ${status.llmKeyConfigured ? 'yes' : 'no'}`,

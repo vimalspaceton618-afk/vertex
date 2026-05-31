@@ -248,7 +248,7 @@ const App = () => {
         <Text>Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source</Text>
         <Text>project, or work from your team). If not, take a moment to review what's in this folder first.</Text>
         <Box marginY={1}>
-          <Text>VERTEX System'll be able to read, edit, and execute files here.</Text>
+          <Text>VERTEX will be able to read, edit, and execute files here.</Text>
         </Box>
         <Text color="gray">Security guide</Text>
         <Box flexDirection="column" marginY={1}>

@@ -51,7 +51,7 @@ export class WriteFileTool extends Tool {
     async execute(args: { filePath: string, content: string }, requestConfirmation: (msg: string) => Promise<boolean>): Promise<string> {
         try {
             const resolvedPath = resolveInsideWorkspace(args.filePath);
-            const approved = await requestConfirmation(`Allow CORTEX to write to ${resolvedPath}?`);
+            const approved = await requestConfirmation(`Allow VERTEX to write to ${resolvedPath}?`);
             if (!approved) return "[OPERATION CANCELLED BY USER]";
             
             // Ensure directory exists
@@ -82,7 +82,7 @@ export class DeleteTool extends Tool {
     async execute(args: { targetPath: string }, requestConfirmation: (msg: string) => Promise<boolean>): Promise<string> {
         try {
             const resolvedPath = resolveInsideWorkspace(args.targetPath);
-            const approved = await requestConfirmation(`[DANGER] Allow CORTEX to permanently DELETE ${resolvedPath}?`);
+            const approved = await requestConfirmation(`[DANGER] Allow VERTEX to permanently DELETE ${resolvedPath}?`);
             if (!approved) return "[OPERATION CANCELLED BY USER]";
             
             await fs.rm(resolvedPath, { recursive: true, force: true });

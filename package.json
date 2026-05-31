@@ -12,16 +12,16 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vimalspaceton618-afk/CORTEX.git"
+    "url": "git+https://github.com/vimalspaceton618-afk/vertex.git"
   },
   "keywords": [],
   "author": "SpaceTon",
   "license": "UNLICENSED",
   "type": "module",
   "bugs": {
-    "url": "https://github.com/vimalspaceton618-afk/CORTEX/issues"
+    "url": "https://github.com/vimalspaceton618-afk/vertex/issues"
   },
-  "homepage": "https://github.com/vimalspaceton618-afk/CORTEX#readme",
+  "homepage": "https://github.com/vimalspaceton618-afk/vertex#readme",
   "dependencies": {
     "chalk": "^5.6.2",
     "commander": "^14.0.3",

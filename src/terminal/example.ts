@@ -1,4 +1,4 @@
-import { CortexTerminalUI } from './CortexTerminalUI.js';
+import { VertexTerminalUI } from './CortexTerminalUI.js';
 import chalk from 'chalk';
 
 async function sleep(ms: number) {
@@ -6,7 +6,7 @@ async function sleep(ms: number) {
 }
 
 async function runExample() {
-  const ui = new CortexTerminalUI();
+  const ui = new VertexTerminalUI();
 
   // Simulate token streaming globally
   const tokenStream = setInterval(() => {
@@ -15,7 +15,7 @@ async function runExample() {
 
   // Step 1: Initializing Agent
   const step1 = 'task-1';
-  ui.startTask(step1, 'Initializing Cortex Agent Environment', 'action');
+  ui.startTask(step1, 'Initializing Vertex Agent Environment', 'action');
   
   for (let i = 1; i <= 3; i++) {
     await sleep(400);
@@ -39,7 +39,7 @@ async function runExample() {
   
   const fileContent = [
     chalk.cyan('function') + ' ' + chalk.green('helloWorld') + '() {',
-    '  console.log(' + chalk.yellow("'Hello Cortex!'") + ');',
+    '  console.log(' + chalk.yellow("'Hello Vertex!'") + ');',
     '}'
   ].join('\n');
 

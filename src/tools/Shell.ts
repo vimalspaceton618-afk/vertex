@@ -62,7 +62,7 @@ export class ShellTool extends Tool {
         }
 
         // ENFORCED UI APPROVAL BARRIER
-        const approved = await requestConfirmation(`[CORTEX ORCHESTRATOR] Wants to run:\n  > ${command}\nIn directory: ${cwd}\nTimeout: ${timeoutMs}ms\nAllow execution? (Y/n)`);
+        const approved = await requestConfirmation(`[VERTEX ORCHESTRATOR] Wants to run:\n  > ${command}\nIn directory: ${cwd}\nTimeout: ${timeoutMs}ms\nAllow execution? (Y/n)`);
         
         if (!approved) {
             return "[USER OVERRIDE]: Command execution was denied. Do not retry this command without changing your approach.";

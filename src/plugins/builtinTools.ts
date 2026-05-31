@@ -570,7 +570,7 @@ class RagKnowledgeStatusTool extends Tool {
     }
 
     async execute(): Promise<string> {
-        const indexPath = path.join(this.context.workspaceRoot, '.cortex', 'rag', 'index.json');
+        const indexPath = path.join(this.context.workspaceRoot, '.vertex', 'rag', 'index.json');
         const exists = fs.existsSync(indexPath);
         return [
             `RAG index path: ${indexPath}`,
@@ -600,21 +600,21 @@ function normalizeWorkflowStatus(status: any): WorkflowRunStepStatus {
 }
 
 function getWorkflowDir(): string {
-    const root = process.env.CORTEX_WORKSPACE_ROOT || process.cwd();
+    const root = process.env.VERTEX_WORKSPACE_ROOT || process.cwd();
     const dir = path.join(root, 'workflows');
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
 
 function getMeshDir(): string {
-    const root = process.env.CORTEX_WORKSPACE_ROOT || process.cwd();
-    const dir = path.join(root, '.cortex_mesh');
+    const root = process.env.VERTEX_WORKSPACE_ROOT || process.cwd();
+    const dir = path.join(root, '.vertex_mesh');
     fs.mkdirSync(dir, { recursive: true });
     return dir;
 }
 
 function getMeshSigningKey(): string {
-    return process.env.MESH_SIGNING_KEY || 'cortex-mesh-dev-key';
+    return process.env.MESH_SIGNING_KEY || 'vertex-mesh-dev-key';
 }
 
 function signEnvelope(payload: string): string {

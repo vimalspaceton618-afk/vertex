@@ -1,7 +1,7 @@
 import chalk from 'chalk';
 import logUpdate from 'log-update';
 
-export interface CortexTask {
+export interface VertexTask {
   id: string;
   type: 'thought' | 'action';
   text: string;
@@ -10,8 +10,8 @@ export interface CortexTask {
   startTime?: number;
 }
 
-export class CortexTerminalUI {
-  private tasks: Map<string, CortexTask> = new Map();
+export class VertexTerminalUI {
+  private tasks: Map<string, VertexTask> = new Map();
   private activeTaskIds: Set<string> = new Set();
   
   private tokenCount: number = 0;
@@ -105,7 +105,7 @@ export class CortexTerminalUI {
     }
   }
   
-  private printCompletedTask(task: CortexTask, panelContent?: string) {
+  private printCompletedTask(task: VertexTask, panelContent?: string) {
     // Finished steps/thoughts render a solid green bullet "●" or checkmark "✓"
     const isAction = task.type === 'action';
     const successIcon = isAction ? chalk.green('✓') : chalk.green('●');

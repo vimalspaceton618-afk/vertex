@@ -29,7 +29,7 @@ export class Orchestrator {
     constructor() {
         this.history.push({
             role: 'system',
-            content: "You are CORTEX, a high-performance agent OS terminal interface. You have tools at your disposal to interact with the host system. When running terminal commands, ask for permission."
+            content: "You are VERTEX, a high-performance cybersecurity agent OS terminal interface. You have tools at your disposal to interact with the host system. When running terminal commands, ask for permission."
         });
     }
 

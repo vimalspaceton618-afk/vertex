@@ -83,8 +83,8 @@ export class PluginManager implements PluginRuntime {
 
     registerToolsForAgent(agentName: string, registry: ToolRegistry): void {
         this.load();
-        const enabledSet = parseCsv(process.env.CORTEX_PLUGINS_ENABLED);
-        const disabledSet = parseCsv(process.env.CORTEX_PLUGINS_DISABLED);
+        const enabledSet = parseCsv(process.env.VERTEX_PLUGINS_ENABLED);
+        const disabledSet = parseCsv(process.env.VERTEX_PLUGINS_DISABLED);
         const workspaceRoot = getWorkspaceRoot();
 
         for (const manifest of this.manifests) {

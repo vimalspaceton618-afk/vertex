@@ -27,7 +27,7 @@ export class ProcessManagementTool extends Tool {
                 return `Here are the currently running processes:\n${stdout.substring(0, 4000)}... (truncated if too long)`;
             } 
             else if (args.action === 'kill' && args.target) {
-                const approved = await requestConfirmation(`[CRITICAL DANGER] Allow CORTEX to KILL process '${args.target}'?`);
+                const approved = await requestConfirmation(`[CRITICAL DANGER] Allow VERTEX to KILL process '${args.target}'?`);
                 if (!approved) return "[OPERATION CANCELLED BY USER]";
                 
                 // Determine if target is PID or Name for windows

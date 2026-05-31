@@ -29,8 +29,8 @@ type WorkflowRunRecord = {
 
 export class SharedContext {
     static getContextFile(): string {
-        const baseRoot = process.env.CORTEX_WORKSPACE_ROOT?.trim() || process.cwd();
-        const candidate = path.join(baseRoot, '.cortex');
+        const baseRoot = process.env.VERTEX_WORKSPACE_ROOT?.trim() || process.cwd();
+        const candidate = path.join(baseRoot, '.vertex');
         if (fs.existsSync(candidate)) {
             try {
                 const st = fs.statSync(candidate);

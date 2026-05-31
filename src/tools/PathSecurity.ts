@@ -1,7 +1,7 @@
 import * as path from 'path';
 
 export function getWorkspaceRoot(): string {
-    const configured = process.env.CORTEX_WORKSPACE_ROOT?.trim();
+    const configured = process.env.VERTEX_WORKSPACE_ROOT?.trim();
     return configured ? path.resolve(configured) : path.resolve(process.cwd());
 }
 

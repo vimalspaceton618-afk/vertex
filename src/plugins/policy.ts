@@ -29,7 +29,7 @@ const DEFAULT_POLICY: PluginPolicy = {
 
 export function getPluginConfigDir(): string {
     const workspaceRoot = getWorkspaceRoot();
-    const legacyRoot = path.join(workspaceRoot, '.cortex');
+    const legacyRoot = path.join(workspaceRoot, '.vertex');
     if (fs.existsSync(legacyRoot)) {
         try {
             if (fs.statSync(legacyRoot).isDirectory()) {
@@ -39,7 +39,7 @@ export function getPluginConfigDir(): string {
             // fall back
         }
     }
-    return path.join(workspaceRoot, '.cortex_plugins');
+    return path.join(workspaceRoot, '.vertex_plugins');
 }
 
 function getPolicyPath(): string {
