@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as dotenv from 'dotenv';
 
 export class ConfigManager {
-    static globalConfigPath = path.join(os.homedir(), '.cortexcli', 'config.json');
+    static globalConfigPath = path.join(os.homedir(), '.vertexcli', 'config.json');
     static defaultConfig() {
         return {
             OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
@@ -30,13 +30,13 @@ export class ConfigManager {
             COMMAND_DENYLIST: process.env.COMMAND_DENYLIST || "",
             WORKSPACE_ROOT: process.env.WORKSPACE_ROOT || "",
             PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH || "",
-            CORTEX_PLUGINS_ENABLED: process.env.CORTEX_PLUGINS_ENABLED || "",
-            CORTEX_PLUGINS_DISABLED: process.env.CORTEX_PLUGINS_DISABLED || ""
+            VERTEX_PLUGINS_ENABLED: process.env.VERTEX_PLUGINS_ENABLED || "",
+            VERTEX_PLUGINS_DISABLED: process.env.VERTEX_PLUGINS_DISABLED || ""
         };
     }
 
     static init() {
-        // 1. Load local .env if the user is explicitly developing CORTEX
+        // 1. Load local .env if the user is explicitly developing VERTEX
         dotenv.config();
 
         // 2. Ensure global OS directory securely exists
@@ -126,16 +126,16 @@ export class ConfigManager {
                 process.env.COMMAND_DENYLIST = data.COMMAND_DENYLIST;
             }
             if (data.WORKSPACE_ROOT && data.WORKSPACE_ROOT.trim() !== '') {
-                process.env.CORTEX_WORKSPACE_ROOT = data.WORKSPACE_ROOT.trim();
+                process.env.VERTEX_WORKSPACE_ROOT = data.WORKSPACE_ROOT.trim();
             }
             if (data.PUPPETEER_EXECUTABLE_PATH && data.PUPPETEER_EXECUTABLE_PATH.trim() !== '') {
                 process.env.PUPPETEER_EXECUTABLE_PATH = data.PUPPETEER_EXECUTABLE_PATH.trim();
             }
-            if (typeof data.CORTEX_PLUGINS_ENABLED === 'string') {
-                process.env.CORTEX_PLUGINS_ENABLED = data.CORTEX_PLUGINS_ENABLED;
+            if (typeof data.VERTEX_PLUGINS_ENABLED === 'string') {
+                process.env.VERTEX_PLUGINS_ENABLED = data.VERTEX_PLUGINS_ENABLED;
             }
-            if (typeof data.CORTEX_PLUGINS_DISABLED === 'string') {
-                process.env.CORTEX_PLUGINS_DISABLED = data.CORTEX_PLUGINS_DISABLED;
+            if (typeof data.VERTEX_PLUGINS_DISABLED === 'string') {
+                process.env.VERTEX_PLUGINS_DISABLED = data.VERTEX_PLUGINS_DISABLED;
             }
         } catch (e) {
             // Silently fallback to standard env

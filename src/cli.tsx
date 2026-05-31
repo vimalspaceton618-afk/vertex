@@ -12,8 +12,8 @@ ConfigManager.init();
 const program = new Command();
 
 program
-  .name('cortex')
-  .description('CORTEX Multi-Agent OS')
+  .name('vertex')
+  .description('VERTEX Multi-Agent OS')
   .version('3.0.0')
   .option('--run <prompt>', 'Run in headless mode with a prompt')
   .option('--json', 'Output as JSON in headless mode')
@@ -23,7 +23,7 @@ program.parse(process.argv);
 const options = program.opts();
 
 async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean) {
-  process.env.CORTEX_WORKSPACE_ROOT = process.cwd();
+  process.env.VERTEX_WORKSPACE_ROOT = process.cwd();
   const normalized = prompt.trim().toLowerCase();
   if (normalized === '/health' || normalized === 'health') {
     const status = collectHealthStatus();

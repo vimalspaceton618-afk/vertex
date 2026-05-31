@@ -31,7 +31,7 @@ const App = () => {
   useInput((char, key) => {
     if (!isTrusted) {
       if (char === '1' || (key.return && trustCursor === 1)) {
-        process.env.CORTEX_WORKSPACE_ROOT = process.cwd();
+        process.env.VERTEX_WORKSPACE_ROOT = process.cwd();
         setIsTrusted(true);
       } else if (char === '2' || (key.return && trustCursor === 2) || key.escape) {
         exit();
@@ -72,21 +72,37 @@ const App = () => {
 
         if (lowerQuery === 'help' || lowerQuery === '/help') {
             setInput('');
-            const helpText = "CORTEX System Commands:\n" +
-              "  /help      - Show this help message\n" +
-              "  /health    - Show runtime readiness checks\n" +
-              "  /plugins   - Show plugin catalog\n" +
-              "  /dashboard - Toggle live system monitoring\n" +
-              "  /exit      - Quit the application\n\n" +
+            const helpText = "VERTEX Cybersecurity CLI — Commands\n" +
+              "════════════════════════════════════════════\n" +
+              "General Commands:\n" +
+              "  /help                  - Show this help message\n" +
+              "  /health                - Show runtime readiness checks\n" +
+              "  /plugins               - List loaded plugin catalog\n" +
+              "  /dashboard             - Toggle live system monitoring\n" +
+              "  /exit                  - Quit the application\n\n" +
+              "🔐 Security & Sandbox Commands:\n" +
+              "  /sandbox <cmd>         - Run a command in an isolated Docker container\n" +
+              "                           (no network, memory-capped, capability-dropped)\n" +
+              "  /audit [path]          - Run a full security audit on a directory\n" +
+              "                           (checks open ports, secrets, file integrity,\n" +
+              "                            active connections, and running processes)\n\n" +
               "Agents Available:\n" +
-              "  - ExploreAgent   : Research and file exploration\n" +
-              "  - PlanAgent      : Task planning\n" +
-              "  - DeveloperAgent : Code writing\n" +
-              "  - QualityAgent   : Testing and linting\n" +
-              "  - DevOpsAgent    : Deployment and infra\n" +
-              "  - BrowserAgent   : Web interaction\n" +
-              "  - NetworkAgent   : External API and workflow orchestration\n\n" +
-              "Note: To use the AI capabilities, ensure you have set OPENAI_API_KEY in your .env file.";
+              "  ExploreAgent   : Research and file exploration\n" +
+              "  PlanAgent      : Task planning and decomposition\n" +
+              "  DeveloperAgent : Code writing and system modification\n" +
+              "  QualityAgent   : Testing, linting, and validation\n" +
+              "  DevOpsAgent    : Deployment and infrastructure\n" +
+              "  BrowserAgent   : Web interaction and scraping\n" +
+              "  NetworkAgent   : External API orchestration\n" +
+              "  🛡️ CyberAgent   : Security audits · Sandboxed execution · Port scanning\n" +
+              "                   DNS investigation · File integrity · Secrets detection\n\n" +
+              "Examples:\n" +
+              "  /sandbox nmap -sV localhost\n" +
+              "  /audit .\n" +
+              "  /audit C:\\Users\\ADMIN\\project\n" +
+              "  Audit my running services for suspicious connections\n" +
+              "  Scan port 22 and 443 on 192.168.1.1\n" +
+              "  Check for leaked API keys in this directory";
             setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: helpText }]);
             return;
         }
@@ -107,6 +123,83 @@ const App = () => {
         if (lowerQuery === '/dashboard') {
             setInput('');
             setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: 'Dashboard feature is currently under development.' }]);
+            return;
+        }
+
+        // /sandbox <command> — isolate and execute in Docker
+        if (lowerQuery.startsWith('/sandbox ')) {
+            const sandboxCmd = query.slice('/sandbox '.length).trim();
+            if (!sandboxCmd) {
+                setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: 'Usage: /sandbox <shell command>\nExample: /sandbox ls -la' }]);
+                setInput('');
+                return;
+            }
+            setInput('');
+            setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: '' }]);
+            setIsStreaming(true);
+            const runSandbox = async () => {
+                const askConfirm = (msg: string) =>
+                    new Promise<boolean>((resolve) => {
+                        setConfirmPrompt({ message: msg, resolve: (val) => { console.clear(); resolve(val); } });
+                    });
+                const prompt = `Use the sandbox_execute tool to run the following command in an isolated Docker container and return the output. Command: ${sandboxCmd}`;
+                const stream = orchestrator.delegateTask(
+                    `[ROUTE_DIRECT:CyberAgent] ${prompt}`,
+                    askConfirm
+                );
+                let fullText = '';
+                for await (const chunk of stream) {
+                    fullText += chunk;
+                    setHistory(prev => {
+                        const updated = [...prev];
+                        updated[updated.length - 1] = { role: 'assistant', content: fullText };
+                        return updated;
+                    });
+                }
+                orchestrator.recordTurn(query, fullText);
+                setIsStreaming(false);
+            };
+            runSandbox();
+            return;
+        }
+
+        // /audit [path] — trigger CyberAgent full security audit
+        if (lowerQuery.startsWith('/audit')) {
+            const auditPath = query.slice('/audit'.length).trim() || process.cwd();
+            setInput('');
+            setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: '' }]);
+            setIsStreaming(true);
+            const runAudit = async () => {
+                const askConfirm = (msg: string) =>
+                    new Promise<boolean>((resolve) => {
+                        setConfirmPrompt({ message: msg, resolve: (val) => { console.clear(); resolve(val); } });
+                    });
+                const prompt = [
+                    `Perform a comprehensive security audit on this path: ${auditPath}`,
+                    'Run the following checks in sequence:',
+                    '1. Scan for exposed secrets using env_secrets_scan',
+                    '2. Run file_integrity on the target path',
+                    '3. Run network_audit to inspect active connections',
+                    '4. Run process_inspect to list suspicious processes',
+                    '5. Compile a structured EXECUTIVE SUMMARY with a FINDINGS TABLE and RECOMMENDATIONS.'
+                ].join('\n');
+                const stream = orchestrator.delegateTask(
+                    `[ROUTE_DIRECT:CyberAgent] ${prompt}`,
+                    askConfirm
+                );
+                let fullText = '';
+                for await (const chunk of stream) {
+                    fullText += chunk;
+                    setHistory(prev => {
+                        const updated = [...prev];
+                        updated[updated.length - 1] = { role: 'assistant', content: fullText };
+                        return updated;
+                    });
+                }
+                orchestrator.recordTurn(query, fullText);
+                setIsStreaming(false);
+            };
+            runAudit();
             return;
         }
 
@@ -155,7 +248,7 @@ const App = () => {
         <Text>Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source</Text>
         <Text>project, or work from your team). If not, take a moment to review what's in this folder first.</Text>
         <Box marginY={1}>
-          <Text>CORTEX System'll be able to read, edit, and execute files here.</Text>
+          <Text>VERTEX System'll be able to read, edit, and execute files here.</Text>
         </Box>
         <Text color="gray">Security guide</Text>
         <Box flexDirection="column" marginY={1}>
@@ -170,7 +263,7 @@ const App = () => {
   return (
     <Box flexDirection="column" width={100}>
       <Box marginBottom={1}>
-        <Text color="cyanBright" bold>CORTEX System v3.0 </Text>
+        <Text color="cyanBright" bold>VERTEX System v3.0 </Text>
         <Text color="gray">{'─'.repeat(81)}</Text>
       </Box>
 
@@ -185,18 +278,20 @@ const App = () => {
             <Text color="#F13E93">{'██████████████'}</Text>
             <Text color="#F13E93">{'  ██      ██  '}</Text>
           </Box>
-          <Text color="gray">CORTEX Multi-Agent OS · 13 Tools</Text>
-          <Text color="gray">E:\CORTEX</Text>
+          <Text color="gray">VERTEX Cybersecurity CLI · 8 Agents · 19 Tools</Text>
+          <Text color="gray">E:\VERTEX</Text>
         </Box>
 
         <Box flexDirection="column" width="55%">
-          <Text color="gray">Tips for getting started</Text>
-          <Text color="gray">Run /help to see all available commands and agents.</Text>
-          <Text color="gray">Run /dashboard to toggle live system monitoring.</Text>
+          <Text color="cyanBright" bold>Security Commands</Text>
+          <Text color="gray">  /sandbox &lt;cmd&gt;   Run cmd in Docker isolation</Text>
+          <Text color="gray">  /audit [path]    Full security audit of a directory</Text>
+          <Text color="gray">  /health          Check runtime readiness</Text>
+          <Text color="gray">  /help            Show all commands and agents</Text>
           <Box marginY={1}></Box>
-          <Text color="gray">Recent activity</Text>
-          <Text color="gray">Model weights loaded cleanly</Text>
-          <Text color="gray">No missed memory syncs</Text>
+          <Text color="#F13E93" bold>🛡️  CyberAgent Active</Text>
+          <Text color="gray">  Port scanning · Secrets detection · Sandboxing</Text>
+          <Text color="gray">  File integrity · Network audit · Process inspection</Text>
         </Box>
       </Box>
 
@@ -214,7 +309,7 @@ const App = () => {
             width="80%"
           >
             <Text color={msg.role === 'user' ? 'greenBright' : 'cyanBright'} bold>
-              {msg.role === 'user' ? 'User' : 'CORTEX'}
+              {msg.role === 'user' ? 'User' : 'VERTEX'}
             </Text>
             <Text>{msg.content}</Text>
           </Box>
@@ -230,7 +325,7 @@ const App = () => {
 
       {!confirmPrompt && (
         <Box marginTop={1} paddingX={2} paddingY={1} borderStyle="round" borderColor="magenta">
-          <Text color="cyanBright" bold>cortex&gt; </Text>
+          <Text color="cyanBright" bold>vertex&gt; </Text>
           <Text>{input}</Text>
           {isStreaming ? <Spinner /> : <Text color="gray">{'|'}</Text>}
         </Box>

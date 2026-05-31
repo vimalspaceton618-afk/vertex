@@ -6,13 +6,13 @@ import { getPluginManager } from '../../plugins/index.js';
 
 class DelegateTaskTool implements Tool {
     name = "delegate_task";
-    description = "Delegate a task to a specialized subagent with strict handoff context. The subagents available are: DeveloperAgent, ExploreAgent, PlanAgent, QualityAgent, DevOpsAgent, BrowserAgent, NetworkAgent.";
+    description = "Delegate a task to a specialized subagent with strict handoff context. The subagents available are: DeveloperAgent, ExploreAgent, PlanAgent, QualityAgent, DevOpsAgent, BrowserAgent, NetworkAgent, CyberAgent. Use CyberAgent for: security audits, sandbox execution of untrusted scripts, port scanning, DNS investigation, file integrity checking, secrets scanning, network auditing, and threat analysis.";
     schema = {
         type: "object",
         properties: {
             agentName: {
                 type: "string",
-                enum: ["DeveloperAgent", "ExploreAgent", "PlanAgent", "QualityAgent", "DevOpsAgent", "BrowserAgent", "NetworkAgent"],
+                enum: ["DeveloperAgent", "ExploreAgent", "PlanAgent", "QualityAgent", "DevOpsAgent", "BrowserAgent", "NetworkAgent", "CyberAgent"],
                 description: "The name of the specialized agent to route to"
             },
             prompt: {

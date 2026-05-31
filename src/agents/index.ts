@@ -5,3 +5,4 @@ export * from './QualityAgent.js';
 export * from './DevOpsAgent.js';
 export * from './BrowserAgent.js';
 export * from './NetworkAgent.js';
+export * from './CyberAgent.js';

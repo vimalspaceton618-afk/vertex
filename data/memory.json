@@ -1,0 +1,168 @@
+{
+  "CONST::c": {
+    "key": "CONST::c",
+    "value": 299792458,
+    "type": "constant",
+    "write_time": 1780161830607,
+    "encrypted": false,
+    "access_count": 12,
+    "integrity_hash": "dbb28f8f868c57aefd397d7856825d931f7452d37e0b024bcdf521e9f0cef59f"
+  },
+  "CONST::h": {
+    "key": "CONST::h",
+    "value": 6.62607015e-34,
+    "type": "constant",
+    "write_time": 1780161830609,
+    "encrypted": false,
+    "access_count": 12,
+    "integrity_hash": "b28b510df13c78f7d2c3247167feaa8a35524bb30f2d52fec8649d21419bf507"
+  },
+  "CONST::G": {
+    "key": "CONST::G",
+    "value": 6.6743e-11,
+    "type": "constant",
+    "write_time": 1780161830609,
+    "encrypted": false,
+    "access_count": 7,
+    "integrity_hash": "1110dc1e11cdf785ae2ec2ed2eb8deb0b8a6788a3729fb350542b0f6768e7efa"
+  },
+  "CONST::e": {
+    "key": "CONST::e",
+    "value": 1.602176634e-19,
+    "type": "constant",
+    "write_time": 1780161830610,
+    "encrypted": false,
+    "access_count": 7,
+    "integrity_hash": "b310c0e392df2449739ef07294b5c846cd0ea03113d58ade900be2a4d42242dd"
+  },
+  "CONST::Na": {
+    "key": "CONST::Na",
+    "value": 6.02214076e+23,
+    "type": "constant",
+    "write_time": 1780161830610,
+    "encrypted": false,
+    "access_count": 7,
+    "integrity_hash": "a8e1dfba9686f87a50b297c0e492a193f82ef4d881d4f2721e7a357e59bf3329"
+  },
+  "CONST::k": {
+    "key": "CONST::k",
+    "value": 1.380649e-23,
+    "type": "constant",
+    "write_time": 1780161830611,
+    "encrypted": false,
+    "access_count": 7,
+    "integrity_hash": "6ed68b14dcad034ee6790a076d884224d75891c508f6977c6fee0456d69a7639"
+  },
+  "CONST::pi": {
+    "key": "CONST::pi",
+    "value": 3.141592653589793,
+    "type": "constant",
+    "write_time": 1780161830611,
+    "encrypted": false,
+    "access_count": 5,
+    "integrity_hash": "256cfe837cf78a4be6773de1f8982144fd7fb55035fbbdbbf55d6354ff704bbf"
+  },
+  "CONST::phi": {
+    "key": "CONST::phi",
+    "value": 1.6180339887,
+    "type": "constant",
+    "write_time": 1780161830611,
+    "encrypted": false,
+    "access_count": 5,
+    "integrity_hash": "71b495bffc084abc5d9251f5bd38dd00771dbada15c0411fc082318a7abdc7a5"
+  },
+  "CONST::euler": {
+    "key": "CONST::euler",
+    "value": 2.718281828,
+    "type": "constant",
+    "write_time": 1780161830611,
+    "encrypted": false,
+    "access_count": 5,
+    "integrity_hash": "e7e41277e9122f26201d29b28b8bc88f272f9e42a470fb30bf241e2142628784"
+  },
+  "thought::f330916e-8293-45f7-9577-3ef7dd76945d": {
+    "key": "thought::f330916e-8293-45f7-9577-3ef7dd76945d",
+    "value": {
+      "encrypted_payload": "6024754a618bb45886764b17c974daf8907198d7a3e8b0e21efa748f6fad41979a5e9553676c49a31dc1dab472dd3e91dbc4313b4a23a20d79fa9fe02370bc36336cb235d031cebbe9f5dc281faffa58516fccf947ff5cca1cfc7149fa55dd5fdba08db510e5527e9aaf62ae7d41160496f07e537f40",
+      "iv": "8b8c5ac1602308b3d393ef5c",
+      "tag": "29fc3da62c640f5e82d907fbec75c43d",
+      "domain": "physics",
+      "mode": "symbolic",
+      "reflection_verdict": "REJECTED"
+    },
+    "type": "episodic",
+    "write_time": 1780162130645,
+    "ttl": 120000,
+    "encrypted": false,
+    "access_count": 0,
+    "integrity_hash": "0982eb11c6bb555f6c937703b023356b0a4c63c0e93a97bea5a50b42a86c4e2e"
+  },
+  "thought::7d0443de-173c-43de-b631-fab8dbd30e10": {
+    "key": "thought::7d0443de-173c-43de-b631-fab8dbd30e10",
+    "value": {
+      "encrypted_payload": "1fd7493bc6dc758d5da2543a670d57757d87dfa977a0607a66ac8ba7f982bb176f44a821e8360ad9cf58de85002cd2eaf97aaf89086c25ee11b0a5c8b0e2520e48a40259656ced8664c3e6300c6f09161fc74594a1533851ec52e169429f89b7f755a25de4b02bb15944c89d174bc77e37b8e0e7a41b",
+      "iv": "2afad1ff664ef758c3bce3af",
+      "tag": "ab0551d597d7a99f283b527f7943a1bb",
+      "domain": "physics",
+      "mode": "symbolic",
+      "reflection_verdict": "REJECTED"
+    },
+    "type": "episodic",
+    "write_time": 1780162430652,
+    "ttl": 120000,
+    "encrypted": false,
+    "access_count": 0,
+    "integrity_hash": "30024c391b25bbb759f3c91065eaf866d9f0ade180271e9be6d444ab1d7a12c4"
+  },
+  "thought::0615a2a7-fdbd-4a88-b5fd-b0a90fd58fc2": {
+    "key": "thought::0615a2a7-fdbd-4a88-b5fd-b0a90fd58fc2",
+    "value": {
+      "encrypted_payload": "a11606336eaad60160282506cb0e091c8fe1c7376c2fe9e47bb95ff9279d8ab4c4ade8cc7986999c77f87fc77860991d16191b691d88541332cc463d3f02d0b933b3d28bb008f03945ac33e38e952fbf4d34155b2e72f33133d22fd98c1670cf3b101963e5deb3abe785f44cd0ca60bdd4820fb2ca84",
+      "iv": "4cf1df7e2e3c3a825ec3333d",
+      "tag": "4748bd888d4d8b7cdea60687d68c7f6d",
+      "domain": "physics",
+      "mode": "symbolic",
+      "reflection_verdict": "REJECTED"
+    },
+    "type": "episodic",
+    "write_time": 1780162730665,
+    "ttl": 120000,
+    "encrypted": false,
+    "access_count": 0,
+    "integrity_hash": "3ef0d165ffd5435f6d5487068efbda4ef93d2dc84f0242ddac68e713e62862aa"
+  },
+  "thought::5d18f37f-c871-402f-950e-a3f4e9492958": {
+    "key": "thought::5d18f37f-c871-402f-950e-a3f4e9492958",
+    "value": {
+      "encrypted_payload": "3b7c21c5606fa2a2c25d287b1399f8827f9d4a343b7db4a1b82c43cefc06c28399cb744cb68b34dffa3ad8f1174dbe18a8611fb2a9d57b1e840c65fd59faa6d3c9f4722e19d06d0540b1883e7ea88dca75b8b1634fcf19c7a8588d6a484e9d13cfdb5fda687a055dd112d2039f93bff45d6176c69fb4",
+      "iv": "23906a06305cda194eab482f",
+      "tag": "70185736194d4540f6f2bb5fdc3b1490",
+      "domain": "physics",
+      "mode": "symbolic",
+      "reflection_verdict": "REJECTED"
+    },
+    "type": "episodic",
+    "write_time": 1780163030686,
+    "ttl": 120000,
+    "encrypted": false,
+    "access_count": 0,
+    "integrity_hash": "f286ad31b3bd0eec57c537e38eed58fa89dc5af2fec4adf57fbb2d8ffd091a8c"
+  },
+  "thought::8097fd32-f145-4f9e-830f-af4f0eb794de": {
+    "key": "thought::8097fd32-f145-4f9e-830f-af4f0eb794de",
+    "value": {
+      "encrypted_payload": "2bb186c7599a0d73f119ad63b23125861386539ef2fc7445422cf649f9413abb920a83d910768d1cac961d687b267eed64b429968083d987e7b086bb99bc69ad692f5930aa8a9e7166b5ff276d5d5cead27c74d9f83063c9ac0fb6124ac3439c06611b4b3a410b9c7c529e8fcfdf71da2a14c95cf4df",
+      "iv": "e083bb4db5fd60122ed56a91",
+      "tag": "e0d86bef1feb2e3b50e634cbf69c4e1e",
+      "domain": "physics",
+      "mode": "symbolic",
+      "reflection_verdict": "REJECTED"
+    },
+    "type": "episodic",
+    "write_time": 1780163330693,
+    "ttl": 120000,
+    "encrypted": false,
+    "access_count": 0,
+    "integrity_hash": "38187b60c131d383ff25d377563945f527332ffe08a127e5cd7916a14af9126d"
+  }
+}

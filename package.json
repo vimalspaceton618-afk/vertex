@@ -1,10 +1,10 @@
 {
-  "name": "cortex",
+  "name": "vertex-cli",
   "version": "1.0.0",
   "description": "<div align=\"center\">",
   "main": "dist/cli.js",
   "bin": {
-    "cortex": "./dist/cli.js"
+    "vertex": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -28,6 +28,7 @@
     "dockerode": "^4.0.10",
     "dotenv": "^17.4.1",
     "ink": "^7.0.0",
+    "log-update": "^8.0.0",
     "openai": "^6.34.0",
     "puppeteer": "^24.40.0",
     "react": "^19.2.5"
