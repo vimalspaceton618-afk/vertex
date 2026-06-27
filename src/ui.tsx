@@ -80,6 +80,8 @@ const App = () => {
               "  /plugins               - List loaded plugin catalog\n" +
               "  /dashboard             - Toggle live system monitoring\n" +
               "  /exit                  - Quit the application\n\n" +
+              "🌐 Browser Commands:\n" +
+              "  /search <query>        - Search DuckDuckGo through BrowserAgent\n\n" +
               "🔐 Security & Sandbox Commands:\n" +
               "  /sandbox <cmd>         - Run a command in an isolated Docker container\n" +
               "                           (no network, memory-capped, capability-dropped)\n" +
@@ -103,6 +105,7 @@ const App = () => {
               "                   Sliver C2 · Offensive operations · Red team ops\n\n" +
               "Examples:\n" +
               "  /sandbox nmap -sV localhost\n" +
+              "  /search kali linux nmap nse scripts\n" +
               "  /audit .\n" +
               "  /audit C:\\Users\\ADMIN\\project\n" +
               "  /nyx scan 192.168.1.0/24 with service detection and vuln scripts\n" +
@@ -130,6 +133,49 @@ const App = () => {
         if (lowerQuery === '/dashboard') {
             setInput('');
             setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: 'Dashboard feature is currently under development.' }]);
+            return;
+        }
+
+        // /search <query> — route DuckDuckGo search through BrowserAgent
+        if (lowerQuery.startsWith('/search ')) {
+            const searchQuery = query.slice('/search '.length).trim();
+            if (!searchQuery) {
+                setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: 'Usage: /search <query>\nExample: /search kali linux nmap nse scripts' }]);
+                setInput('');
+                return;
+            }
+            setInput('');
+            setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: '' }]);
+            setIsStreaming(true);
+            const runSearch = async () => {
+                const askConfirm = (msg: string) =>
+                    new Promise<boolean>((resolve) => {
+                        setConfirmPrompt({ message: msg, resolve: (val) => { console.clear(); resolve(val); } });
+                    });
+                const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
+                const prompt = [
+                    `Use browser_get_content to open this DuckDuckGo search URL: ${url}`,
+                    `Search query: ${searchQuery}`,
+                    'Return the most relevant visible results with titles, snippets, and URLs when present.',
+                    'Keep the answer concise and mention if the browser runtime is not configured.'
+                ].join('\n');
+                const stream = orchestrator.delegateTask(
+                    `[ROUTE_DIRECT:BrowserAgent] ${prompt}`,
+                    askConfirm
+                );
+                let fullText = '';
+                for await (const chunk of stream) {
+                    fullText += chunk;
+                    setHistory(prev => {
+                        const updated = [...prev];
+                        updated[updated.length - 1] = { role: 'assistant', content: fullText };
+                        return updated;
+                    });
+                }
+                orchestrator.recordTurn(query, fullText);
+                setIsStreaming(false);
+            };
+            runSearch();
             return;
         }
 
@@ -328,6 +374,7 @@ const App = () => {
         <Box flexDirection="column" width="55%">
           <Text color="cyanBright" bold>Security Commands</Text>
           <Text color="gray">  /sandbox &lt;cmd&gt;   Run cmd in Docker isolation</Text>
+          <Text color="gray">  /search &lt;query&gt;  Search DuckDuckGo in browser</Text>
           <Text color="gray">  /audit [path]    Full security audit of a directory</Text>
           <Text color="gray">  /health          Check runtime readiness</Text>
           <Text color="gray">  /help            Show all commands and agents</Text>

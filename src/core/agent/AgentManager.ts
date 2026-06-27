@@ -173,6 +173,14 @@ export class AgentManager extends BaseAgent {
     }
 
     public async *delegateTask(input: string, requestConfirmation: (msg: string) => Promise<boolean>): AsyncGenerator<string> {
+        const directRoute = input.match(/^\[ROUTE_DIRECT:([A-Za-z0-9_]+)\]\s*([\s\S]*)$/);
+        if (directRoute) {
+            const [, agentName, prompt] = directRoute;
+            const tool = new DelegateTaskTool();
+            yield* tool.execute({ agentName, prompt }, requestConfirmation);
+            return;
+        }
+
         const memoryBlock = SharedContext.buildMemoryBlock();
         const enrichedInput = memoryBlock
             ? `${input}\n\nUse available session memory when relevant.\n${memoryBlock}`

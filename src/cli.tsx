@@ -35,9 +35,31 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
     return;
   }
 
+  let routedPrompt = prompt;
+  if (normalized.startsWith('/search ')) {
+    const searchQuery = prompt.trim().slice('/search '.length).trim();
+    if (!searchQuery) {
+      const output = 'Usage: /search <query>\nExample: /search kali linux nmap nse scripts';
+      if (asJson) {
+        process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${output}\n`);
+      }
+      return;
+    }
+    const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
+    routedPrompt = [
+      '[ROUTE_DIRECT:BrowserAgent]',
+      `Use browser_get_content to open this DuckDuckGo search URL: ${url}`,
+      `Search query: ${searchQuery}`,
+      'Return the most relevant visible results with titles, snippets, and URLs when present.',
+      'Keep the answer concise and mention if the browser runtime is not configured.'
+    ].join('\n');
+  }
+
   const orchestrator = new AgentManager();
   const confirm = async (msg: string) => autoApprove ? true : false;
-  const stream = orchestrator.delegateTask(prompt, confirm);
+  const stream = orchestrator.delegateTask(routedPrompt, confirm);
   let output = '';
   for await (const chunk of stream) {
     output += chunk;

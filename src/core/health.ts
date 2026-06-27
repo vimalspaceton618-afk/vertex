@@ -49,6 +49,12 @@ function detectBrowserRuntime(overridePath: string): boolean {
   if (overridePath) {
     return fs.existsSync(overridePath);
   }
+  if (process.platform !== 'win32') {
+    return checkBinary('which chromium') ||
+      checkBinary('which chromium-browser') ||
+      checkBinary('which google-chrome') ||
+      checkBinary('which google-chrome-stable');
+  }
   const candidates = [
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',

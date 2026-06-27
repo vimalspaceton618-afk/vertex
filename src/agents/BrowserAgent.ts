@@ -8,9 +8,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 function getBrowserCandidates(): string[] {
+    const configured = process.env.PUPPETEER_EXECUTABLE_PATH?.trim();
+    if (configured && fs.existsSync(path.normalize(configured))) {
+        return [configured];
+    }
     if (process.platform !== 'win32') return [];
     const candidates = [
-        process.env.PUPPETEER_EXECUTABLE_PATH || '',
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
         'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
@@ -136,7 +139,7 @@ export class BrowserAgent extends BaseAgent {
                 const candidates = getBrowserCandidates();
                 const candidateNote = candidates.length
                     ? `Detected browser executable candidates:\n- ${candidates.join('\n- ')}`
-                    : 'No browser executable candidates detected. Set PUPPETEER_EXECUTABLE_PATH in ~/.cortexcli/config.json.';
+                    : 'No browser executable candidates detected. Set PUPPETEER_EXECUTABLE_PATH in ~/.vertexcli/config.json or .env.';
                 throw new Error(`Browser launch failed: ${error.message}\n${candidateNote}`);
             }
         }

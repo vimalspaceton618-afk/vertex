@@ -72,6 +72,7 @@ Fast, one-command access to the most common security operations:
 ```bash
 /sandbox <command>    # Run any command in a Docker isolation container
 /audit [path]         # Full security audit: secrets + integrity + network + processes
+/search <query>       # Search DuckDuckGo through BrowserAgent
 /health               # Check VERTEX runtime readiness
 /help                 # Show all commands and agents
 /exit                 # Quit
@@ -197,6 +198,7 @@ Generate a SHA-256 integrity manifest for /etc/nginx
 /health     # Runtime readiness check
 /help       # Show all commands and agents
 /plugins    # List loaded plugin catalog
+/search kali linux nmap nse scripts
 /exit       # Quit VERTEX
 ```
 
