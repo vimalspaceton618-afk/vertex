@@ -18,6 +18,7 @@ import { AgentManager } from './core/agent/AgentManager.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
+import { BrowserAgent } from './agents/BrowserAgent.js';
 
 ensureScopeFile();
 
@@ -87,6 +88,9 @@ const App = () => {
               "  /exit                  - Quit the application\n\n" +
               "🌐 Browser Commands:\n" +
               "  /search <query>        - Search DuckDuckGo through BrowserAgent\n\n" +
+              "  /open <url>            - Open URL and return title\n" +
+              "  /summarize-url <url>   - Extract and summarize URL text\n" +
+              "  /screenshot-url <url>  - Save a page screenshot\n\n" +
               "🔐 Security & Sandbox Commands:\n" +
               "  /sandbox <cmd>         - Run a command in an isolated Docker container\n" +
               "                           (no network, memory-capped, capability-dropped)\n" +
@@ -115,6 +119,7 @@ const App = () => {
               "  /safe-sandbox cat /etc/os-release\n" +
               "  /safe-sandbox --image python:3.12-alpine python -c \"print(2+2)\"\n" +
               "  /search kali linux nmap nse scripts\n" +
+              "  /summarize-url https://example.com\n" +
               "  /audit .\n" +
               "  /audit C:\\Users\\ADMIN\\project\n" +
               "  /nyx scan 192.168.1.0/24 with service detection and vuln scripts\n" +
@@ -163,34 +168,90 @@ const App = () => {
             setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: '' }]);
             setIsStreaming(true);
             const runSearch = async () => {
-                const askConfirm = (msg: string) =>
-                    new Promise<boolean>((resolve) => {
-                        setConfirmPrompt({ message: msg, resolve: (val) => { console.clear(); resolve(val); } });
-                    });
-                const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
-                const prompt = [
-                    `Use browser_get_content to open this DuckDuckGo search URL: ${url}`,
-                    `Search query: ${searchQuery}`,
-                    'Return the most relevant visible results with titles, snippets, and URLs when present.',
-                    'Keep the answer concise and mention if the browser runtime is not configured.'
-                ].join('\n');
-                const stream = orchestrator.delegateTask(
-                    `[ROUTE_DIRECT:BrowserAgent] ${prompt}`,
-                    askConfirm
-                );
-                let fullText = '';
-                for await (const chunk of stream) {
-                    fullText += chunk;
-                    setHistory(prev => {
-                        const updated = [...prev];
-                        updated[updated.length - 1] = { role: 'assistant', content: fullText };
-                        return updated;
-                    });
-                }
-                orchestrator.recordTurn(query, fullText);
+                const result = await new BrowserAgent().searchDuckDuckGo(searchQuery);
+                setHistory(prev => {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = { role: 'assistant', content: result };
+                    return updated;
+                });
+                orchestrator.recordTurn(query, result);
                 setIsStreaming(false);
             };
             runSearch();
+            return;
+        }
+
+        if (lowerQuery.startsWith('/open ')) {
+            const url = query.slice('/open '.length).trim();
+            if (!url) {
+                setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: 'Usage: /open <url>' }]);
+                setInput('');
+                return;
+            }
+            setInput('');
+            setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: '' }]);
+            setIsStreaming(true);
+            const runOpen = async () => {
+                const result = await new BrowserAgent().navigateUrl(url);
+                setHistory(prev => {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = { role: 'assistant', content: result };
+                    return updated;
+                });
+                orchestrator.recordTurn(query, result);
+                setIsStreaming(false);
+            };
+            runOpen();
+            return;
+        }
+
+        if (lowerQuery.startsWith('/summarize-url ')) {
+            const url = query.slice('/summarize-url '.length).trim();
+            if (!url) {
+                setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: 'Usage: /summarize-url <url>' }]);
+                setInput('');
+                return;
+            }
+            setInput('');
+            setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: '' }]);
+            setIsStreaming(true);
+            const runSummarize = async () => {
+                const result = await new BrowserAgent().summarizeUrl(url);
+                setHistory(prev => {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = { role: 'assistant', content: result };
+                    return updated;
+                });
+                orchestrator.recordTurn(query, result);
+                setIsStreaming(false);
+            };
+            runSummarize();
+            return;
+        }
+
+        if (lowerQuery.startsWith('/screenshot-url ')) {
+            const parts = query.slice('/screenshot-url '.length).trim().split(/\s+/);
+            const url = parts[0] || '';
+            const filePath = parts[1] || `artifacts/screenshots/screenshot-${Date.now()}.png`;
+            if (!url) {
+                setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: 'Usage: /screenshot-url <url> [filePath]' }]);
+                setInput('');
+                return;
+            }
+            setInput('');
+            setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: '' }]);
+            setIsStreaming(true);
+            const runScreenshot = async () => {
+                const result = await new BrowserAgent().screenshotUrl(url, filePath);
+                setHistory(prev => {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = { role: 'assistant', content: result };
+                    return updated;
+                });
+                orchestrator.recordTurn(query, result);
+                setIsStreaming(false);
+            };
+            runScreenshot();
             return;
         }
 
@@ -423,6 +484,7 @@ const App = () => {
           <Text color="gray">  /sandbox &lt;cmd&gt;   Run cmd in Docker isolation</Text>
           <Text color="gray">  /safe-sandbox     Hardened safety sandbox</Text>
           <Text color="gray">  /search &lt;query&gt;  Search DuckDuckGo in browser</Text>
+          <Text color="gray">  /open &lt;url&gt;      Open URL in browser</Text>
           <Text color="gray">  /audit [path]    Full security audit of a directory</Text>
           <Text color="gray">  /health          Check runtime readiness</Text>
           <Text color="gray">  /scope show      Show engagement scope</Text>

@@ -8,6 +8,7 @@ import { AgentManager } from './core/agent/AgentManager.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
+import { BrowserAgent } from './agents/BrowserAgent.js';
 
 ConfigManager.init();
 ensureScopeFile();
@@ -122,14 +123,69 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
       }
       return;
     }
-    const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(searchQuery)}`;
-    routedPrompt = [
-      '[ROUTE_DIRECT:BrowserAgent]',
-      `Use browser_get_content to open this DuckDuckGo search URL: ${url}`,
-      `Search query: ${searchQuery}`,
-      'Return the most relevant visible results with titles, snippets, and URLs when present.',
-      'Keep the answer concise and mention if the browser runtime is not configured.'
-    ].join('\n');
+    const output = await new BrowserAgent().searchDuckDuckGo(searchQuery);
+    if (asJson) {
+      process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`${output}\n`);
+    }
+    return;
+  } else if (normalized.startsWith('/open ')) {
+    const url = prompt.trim().slice('/open '.length).trim();
+    if (!url) {
+      const output = 'Usage: /open <url>';
+      if (asJson) {
+        process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${output}\n`);
+      }
+      return;
+    }
+    const output = await new BrowserAgent().navigateUrl(url);
+    if (asJson) {
+      process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`${output}\n`);
+    }
+    return;
+  } else if (normalized.startsWith('/summarize-url ')) {
+    const url = prompt.trim().slice('/summarize-url '.length).trim();
+    if (!url) {
+      const output = 'Usage: /summarize-url <url>';
+      if (asJson) {
+        process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${output}\n`);
+      }
+      return;
+    }
+    const output = await new BrowserAgent().summarizeUrl(url);
+    if (asJson) {
+      process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`${output}\n`);
+    }
+    return;
+  } else if (normalized.startsWith('/screenshot-url ')) {
+    const parts = prompt.trim().slice('/screenshot-url '.length).trim().split(/\s+/);
+    const url = parts[0] || '';
+    const filePath = parts[1] || `artifacts/screenshots/screenshot-${Date.now()}.png`;
+    if (!url) {
+      const output = 'Usage: /screenshot-url <url> [filePath]';
+      if (asJson) {
+        process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${output}\n`);
+      }
+      return;
+    }
+    const output = await new BrowserAgent().screenshotUrl(url, filePath);
+    if (asJson) {
+      process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`${output}\n`);
+    }
+    return;
   }
 
   const orchestrator = new AgentManager();

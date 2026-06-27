@@ -74,6 +74,9 @@ Fast, one-command access to the most common security operations:
 /safe-sandbox <cmd>   # Hardened Docker-only safety research sandbox
 /audit [path]         # Full security audit: secrets + integrity + network + processes
 /search <query>       # Search DuckDuckGo through BrowserAgent
+/open <url>           # Open URL and return page title
+/summarize-url <url>  # Extract visible page text and summarize it
+/screenshot-url <url> # Save full-page screenshot
 /health               # Check VERTEX runtime readiness
 /help                 # Show all commands and agents
 /exit                 # Quit
@@ -205,6 +208,9 @@ Generate a SHA-256 integrity manifest for /etc/nginx
 /help       # Show all commands and agents
 /plugins    # List loaded plugin catalog
 /search kali linux nmap nse scripts
+/open https://example.com
+/summarize-url https://example.com
+/screenshot-url https://example.com artifacts/screenshots/example.png
 /exit       # Quit VERTEX
 ```
 
