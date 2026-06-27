@@ -1,7 +1,7 @@
 import { BaseAgent } from '../core/agent/BaseAgent.js';
 import { ReadFileTool, WriteFileTool, ListDirTool } from '../tools/FileSystem.js';
 import { ShellTool } from '../tools/Shell.js';
-import { DockerSandboxTool } from '../tools/DockerSandbox.js';
+import { DockerSandboxTool, SafetyResearchSandboxTool } from '../tools/DockerSandbox.js';
 import {
     DnsLookupTool,
     PortScanTool,
@@ -23,11 +23,13 @@ YOUR CORE MISSION:
 - Perform deep security audits on directories, configurations, and running services.
 - Investigate suspicious behavior: unusual processes, open ports, exposed secrets, and tampered files.
 - Execute untrusted or unknown scripts safely in isolated Docker sandboxes to protect the host.
+- Test containment and safety-research behavior only inside hardened sandboxes.
 - Provide actionable threat analysis with clear risk ratings (CRITICAL / HIGH / MEDIUM / LOW / INFO).
 - Never minimize or downplay real findings — be precise, technical, and thorough.
 
 TOOLSET:
 - sandbox_execute: Isolate and run untrusted commands inside an ephemeral Alpine container.
+- safety_sandbox_execute: Run safety research inside a hardened Docker container with no network, read-only root filesystem, tmpfs-only writable paths, and no host fallback.
 - dns_lookup: Investigate DNS health, identify hijacking, and verify configurations.
 - port_scan: Map open ports using nmap or native TCP scanner.
 - network_audit: Inspect active connections, listeners, and suspicious sockets.
@@ -50,6 +52,7 @@ When completing a security audit, always structure your response as:
     protected setupTools(): void {
         // Sandboxing
         this.registry.register(new DockerSandboxTool());
+        this.registry.register(new SafetyResearchSandboxTool());
 
         // Linux Security Suite
         this.registry.register(new DnsLookupTool());

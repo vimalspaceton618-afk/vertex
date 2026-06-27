@@ -7,6 +7,7 @@ import { ConfigManager } from './core/config.js';
 import { AgentManager } from './core/agent/AgentManager.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
+import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 
 ConfigManager.init();
 ensureScopeFile();
@@ -40,6 +41,29 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
     const output = describeScope();
     if (asJson) {
       process.stdout.write(`${JSON.stringify({ prompt, scope: output }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`${output}\n`);
+    }
+    return;
+  }
+  if (normalized.startsWith('/safe-sandbox ')) {
+    const raw = prompt.trim().slice('/safe-sandbox '.length).trim();
+    const imageMatch = raw.match(/^--image\s+(\S+)\s+([\s\S]+)$/);
+    const image = imageMatch?.[1];
+    const command = (imageMatch?.[2] || raw).trim();
+    if (!command) {
+      const output = 'Usage: /safe-sandbox [--image alpine:latest|python:3.12-alpine|node:22-alpine] <command>';
+      if (asJson) {
+        process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${output}\n`);
+      }
+      return;
+    }
+    const confirm = async () => autoApprove ? true : false;
+    const output = await new SafetyResearchSandboxTool().execute({ command, image }, confirm);
+    if (asJson) {
+      process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
     } else {
       process.stdout.write(`${output}\n`);
     }

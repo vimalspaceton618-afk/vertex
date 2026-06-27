@@ -17,6 +17,7 @@ import { Box, Text, useInput, useApp } from 'ink';
 import { AgentManager } from './core/agent/AgentManager.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
+import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 
 ensureScopeFile();
 
@@ -89,6 +90,8 @@ const App = () => {
               "🔐 Security & Sandbox Commands:\n" +
               "  /sandbox <cmd>         - Run a command in an isolated Docker container\n" +
               "                           (no network, memory-capped, capability-dropped)\n" +
+              "  /safe-sandbox <cmd>    - Hardened safety-research sandbox\n" +
+              "                           (Docker required, no fallback, read-only rootfs)\n" +
               "  /audit [path]          - Run a full security audit on a directory\n" +
               "                           (checks open ports, secrets, file integrity,\n" +
               "                            active connections, and running processes)\n\n" +
@@ -109,6 +112,8 @@ const App = () => {
               "                   Sliver C2 · Offensive operations · Red team ops\n\n" +
               "Examples:\n" +
               "  /sandbox nmap -sV localhost\n" +
+              "  /safe-sandbox cat /etc/os-release\n" +
+              "  /safe-sandbox --image python:3.12-alpine python -c \"print(2+2)\"\n" +
               "  /search kali linux nmap nse scripts\n" +
               "  /audit .\n" +
               "  /audit C:\\Users\\ADMIN\\project\n" +
@@ -186,6 +191,38 @@ const App = () => {
                 setIsStreaming(false);
             };
             runSearch();
+            return;
+        }
+
+        // /sandbox <command> — isolate and execute in Docker
+        if (lowerQuery.startsWith('/safe-sandbox ')) {
+            const raw = query.slice('/safe-sandbox '.length).trim();
+            const imageMatch = raw.match(/^--image\s+(\S+)\s+([\s\S]+)$/);
+            const image = imageMatch?.[1];
+            const command = (imageMatch?.[2] || raw).trim();
+            if (!command) {
+                setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: 'Usage: /safe-sandbox [--image alpine:latest|python:3.12-alpine|node:22-alpine] <command>' }]);
+                setInput('');
+                return;
+            }
+            setInput('');
+            setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: '' }]);
+            setIsStreaming(true);
+            const runSafeSandbox = async () => {
+                const askConfirm = (msg: string) =>
+                    new Promise<boolean>((resolve) => {
+                        setConfirmPrompt({ message: msg, resolve: (val) => { console.clear(); resolve(val); } });
+                    });
+                const result = await new SafetyResearchSandboxTool().execute({ command, image }, askConfirm);
+                setHistory(prev => {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = { role: 'assistant', content: result };
+                    return updated;
+                });
+                orchestrator.recordTurn(query, result);
+                setIsStreaming(false);
+            };
+            runSafeSandbox();
             return;
         }
 
@@ -384,6 +421,7 @@ const App = () => {
         <Box flexDirection="column" width="55%">
           <Text color="cyanBright" bold>Security Commands</Text>
           <Text color="gray">  /sandbox &lt;cmd&gt;   Run cmd in Docker isolation</Text>
+          <Text color="gray">  /safe-sandbox     Hardened safety sandbox</Text>
           <Text color="gray">  /search &lt;query&gt;  Search DuckDuckGo in browser</Text>
           <Text color="gray">  /audit [path]    Full security audit of a directory</Text>
           <Text color="gray">  /health          Check runtime readiness</Text>

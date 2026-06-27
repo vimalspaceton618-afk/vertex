@@ -71,6 +71,7 @@ Fast, one-command access to the most common security operations:
 
 ```bash
 /sandbox <command>    # Run any command in a Docker isolation container
+/safe-sandbox <cmd>   # Hardened Docker-only safety research sandbox
 /audit [path]         # Full security audit: secrets + integrity + network + processes
 /search <query>       # Search DuckDuckGo through BrowserAgent
 /health               # Check VERTEX runtime readiness
@@ -179,6 +180,11 @@ vertex
 /sandbox nmap -sV localhost
 /sandbox cat /etc/passwd
 /sandbox python3 suspicious_script.py
+
+# Run containment/safety research in a stricter Docker-only sandbox
+/safe-sandbox cat /etc/os-release
+/safe-sandbox --image python:3.12-alpine python -c "print(2+2)"
+/safe-sandbox --image node:22-alpine node -e "console.log(process.version)"
 
 # Run a full security audit on a directory
 /audit .
