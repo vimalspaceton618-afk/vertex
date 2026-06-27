@@ -1,0 +1,16 @@
+{
+  "autonomyMode": "semi_auto",
+  "riskDefaults": {
+    "read": {
+      "requireConfirmation": false
+    },
+    "mutate": {
+      "requireConfirmation": true
+    },
+    "destructive": {
+      "requireConfirmation": true
+    }
+  },
+  "defaultAllow": true,
+  "tools": {}
+}

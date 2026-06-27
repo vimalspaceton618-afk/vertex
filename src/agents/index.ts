@@ -6,3 +6,4 @@ export * from './DevOpsAgent.js';
 export * from './BrowserAgent.js';
 export * from './NetworkAgent.js';
 export * from './CyberAgent.js';
+export * from './NyxAgent.js';

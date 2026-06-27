@@ -29,6 +29,11 @@ export type HealthStatus = {
   ripgrepAvailable: boolean;
   browserRuntimeAvailable: boolean;
   puppeteerExecutableOverride: string;
+  // Nyx Arsenal
+  nmapAvailable: boolean;
+  msfconsoleAvailable: boolean;
+  crackmapexecAvailable: boolean;
+  sliverAvailable: boolean;
 };
 
 function checkBinary(cmd: string): boolean {
@@ -51,6 +56,14 @@ function detectBrowserRuntime(overridePath: string): boolean {
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
   ];
   return candidates.some((p) => fs.existsSync(p));
+}
+
+function checkBinaryByName(name: string, envOverride?: string): boolean {
+  if (envOverride && envOverride.trim()) {
+    return fs.existsSync(envOverride.trim());
+  }
+  const cmd = process.platform === 'win32' ? `where ${name}` : `which ${name}`;
+  return checkBinary(cmd);
 }
 
 export function collectHealthStatus(): HealthStatus {
@@ -83,7 +96,12 @@ export function collectHealthStatus(): HealthStatus {
     gitAvailable: checkBinary('git --version'),
     ripgrepAvailable: checkBinary('rg --version'),
     browserRuntimeAvailable: detectBrowserRuntime(puppeteerExecutableOverride),
-    puppeteerExecutableOverride: puppeteerExecutableOverride || '(auto-detect)'
+    puppeteerExecutableOverride: puppeteerExecutableOverride || '(auto-detect)',
+    // Nyx Arsenal binary detection
+    nmapAvailable: checkBinaryByName('nmap', process.env.NMAP_PATH),
+    msfconsoleAvailable: checkBinaryByName('msfconsole', process.env.MSF_PATH),
+    crackmapexecAvailable: checkBinaryByName('nxc') || checkBinaryByName('crackmapexec', process.env.CME_PATH),
+    sliverAvailable: checkBinaryByName('sliver', process.env.SLIVER_PATH),
   };
 }
 
@@ -105,6 +123,12 @@ export function formatHealthReport(status: HealthStatus): string {
     `- Git available: ${status.gitAvailable ? 'yes' : 'no'}`,
     `- Ripgrep available: ${status.ripgrepAvailable ? 'yes' : 'no'}`,
     `- Browser runtime available: ${status.browserRuntimeAvailable ? 'yes' : 'no'}`,
-    `- Puppeteer executable override: ${status.puppeteerExecutableOverride}`
+    `- Puppeteer executable override: ${status.puppeteerExecutableOverride}`,
+    '',
+    'Nyx Arsenal',
+    `- Nmap available: ${status.nmapAvailable ? 'yes' : 'no'}`,
+    `- Metasploit (msfconsole) available: ${status.msfconsoleAvailable ? 'yes' : 'no'}`,
+    `- CrackMapExec/NetExec available: ${status.crackmapexecAvailable ? 'yes' : 'no'}`,
+    `- Sliver C2 available: ${status.sliverAvailable ? 'yes' : 'no'}`
   ].join('\n');
 }

@@ -86,6 +86,9 @@ const App = () => {
               "  /audit [path]          - Run a full security audit on a directory\n" +
               "                           (checks open ports, secrets, file integrity,\n" +
               "                            active connections, and running processes)\n\n" +
+              "⚔️  Offensive Operations (Nyx Arsenal):\n" +
+              "  /nyx <prompt>          - Route directly to NyxAgent for offensive ops\n" +
+              "                           (Metasploit, Nmap NSE, Burp, CME, Sliver)\n\n" +
               "Agents Available:\n" +
               "  ExploreAgent   : Research and file exploration\n" +
               "  PlanAgent      : Task planning and decomposition\n" +
@@ -95,11 +98,15 @@ const App = () => {
               "  BrowserAgent   : Web interaction and scraping\n" +
               "  NetworkAgent   : External API orchestration\n" +
               "  🛡️ CyberAgent   : Security audits · Sandboxed execution · Port scanning\n" +
-              "                   DNS investigation · File integrity · Secrets detection\n\n" +
+              "                   DNS investigation · File integrity · Secrets detection\n" +
+              "  ⚔️  NyxAgent     : Metasploit · Nmap NSE · Burp Suite · CrackMapExec\n" +
+              "                   Sliver C2 · Offensive operations · Red team ops\n\n" +
               "Examples:\n" +
               "  /sandbox nmap -sV localhost\n" +
               "  /audit .\n" +
               "  /audit C:\\Users\\ADMIN\\project\n" +
+              "  /nyx scan 192.168.1.0/24 with service detection and vuln scripts\n" +
+              "  /nyx spray creds admin:Password1 over SMB on 10.0.0.0/24\n" +
               "  Audit my running services for suspicious connections\n" +
               "  Scan port 22 and 443 on 192.168.1.1\n" +
               "  Check for leaked API keys in this directory";
@@ -200,6 +207,42 @@ const App = () => {
                 setIsStreaming(false);
             };
             runAudit();
+            return;
+        }
+
+        // /nyx <prompt> — route directly to NyxAgent for offensive operations
+        if (lowerQuery.startsWith('/nyx ')) {
+            const nyxPrompt = query.slice('/nyx '.length).trim();
+            if (!nyxPrompt) {
+                setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: 'Usage: /nyx <offensive security prompt>\nExample: /nyx scan 192.168.1.0/24 with nmap service detection and vuln scripts' }]);
+                setInput('');
+                return;
+            }
+            setInput('');
+            setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: '' }]);
+            setIsStreaming(true);
+            const runNyx = async () => {
+                const askConfirm = (msg: string) =>
+                    new Promise<boolean>((resolve) => {
+                        setConfirmPrompt({ message: msg, resolve: (val) => { console.clear(); resolve(val); } });
+                    });
+                const stream = orchestrator.delegateTask(
+                    `[ROUTE_DIRECT:NyxAgent] ${nyxPrompt}`,
+                    askConfirm
+                );
+                let fullText = '';
+                for await (const chunk of stream) {
+                    fullText += chunk;
+                    setHistory(prev => {
+                        const updated = [...prev];
+                        updated[updated.length - 1] = { role: 'assistant', content: fullText };
+                        return updated;
+                    });
+                }
+                orchestrator.recordTurn(query, fullText);
+                setIsStreaming(false);
+            };
+            runNyx();
             return;
         }
 
