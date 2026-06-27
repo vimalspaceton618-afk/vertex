@@ -16,6 +16,9 @@ const Spinner = () => {
 import { Box, Text, useInput, useApp } from 'ink';
 import { AgentManager } from './core/agent/AgentManager.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
+import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
+
+ensureScopeFile();
 
 const App = () => {
   const { exit } = useApp();
@@ -77,6 +80,7 @@ const App = () => {
               "General Commands:\n" +
               "  /help                  - Show this help message\n" +
               "  /health                - Show runtime readiness checks\n" +
+              "  /scope show            - Show engagement scope and tool policy\n" +
               "  /plugins               - List loaded plugin catalog\n" +
               "  /dashboard             - Toggle live system monitoring\n" +
               "  /exit                  - Quit the application\n\n" +
@@ -121,6 +125,12 @@ const App = () => {
             setInput('');
             const status = collectHealthStatus();
             setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: formatHealthReport(status) }]);
+            return;
+        }
+
+        if (lowerQuery === '/scope' || lowerQuery === '/scope show') {
+            setInput('');
+            setHistory(prev => [...prev, { role: 'user', content: query }, { role: 'assistant', content: describeScope() }]);
             return;
         }
 
@@ -377,6 +387,7 @@ const App = () => {
           <Text color="gray">  /search &lt;query&gt;  Search DuckDuckGo in browser</Text>
           <Text color="gray">  /audit [path]    Full security audit of a directory</Text>
           <Text color="gray">  /health          Check runtime readiness</Text>
+          <Text color="gray">  /scope show      Show engagement scope</Text>
           <Text color="gray">  /help            Show all commands and agents</Text>
           <Box marginY={1}></Box>
           <Text color="#F13E93" bold>🛡️  CyberAgent Active</Text>

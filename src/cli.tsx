@@ -6,8 +6,10 @@ import App from './ui.js';
 import { ConfigManager } from './core/config.js';
 import { AgentManager } from './core/agent/AgentManager.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
+import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
 
 ConfigManager.init();
+ensureScopeFile();
 
 const program = new Command();
 
@@ -34,9 +36,58 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
     }
     return;
   }
+  if (normalized === '/scope' || normalized === '/scope show' || normalized === 'scope') {
+    const output = describeScope();
+    if (asJson) {
+      process.stdout.write(`${JSON.stringify({ prompt, scope: output }, null, 2)}\n`);
+    } else {
+      process.stdout.write(`${output}\n`);
+    }
+    return;
+  }
 
   let routedPrompt = prompt;
-  if (normalized.startsWith('/search ')) {
+  if (normalized.startsWith('/sandbox ')) {
+    const sandboxCmd = prompt.trim().slice('/sandbox '.length).trim();
+    if (!sandboxCmd) {
+      const output = 'Usage: /sandbox <shell command>\nExample: /sandbox uname -a';
+      if (asJson) {
+        process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${output}\n`);
+      }
+      return;
+    }
+    routedPrompt = [
+      '[ROUTE_DIRECT:CyberAgent]',
+      'Use the sandbox_execute tool to run the following command in an isolated Docker container and return the output.',
+      `Command: ${sandboxCmd}`
+    ].join('\n');
+  } else if (normalized.startsWith('/audit')) {
+    const auditPath = prompt.trim().slice('/audit'.length).trim() || process.cwd();
+    routedPrompt = [
+      '[ROUTE_DIRECT:CyberAgent]',
+      `Perform a comprehensive security audit on this path: ${auditPath}`,
+      'Run the following checks in sequence:',
+      '1. Scan for exposed secrets using env_secrets_scan',
+      '2. Run file_integrity on the target path',
+      '3. Run network_audit to inspect active connections',
+      '4. Run process_inspect to list suspicious processes',
+      '5. Compile a structured EXECUTIVE SUMMARY with a FINDINGS TABLE and RECOMMENDATIONS.'
+    ].join('\n');
+  } else if (normalized.startsWith('/nyx ')) {
+    const nyxPrompt = prompt.trim().slice('/nyx '.length).trim();
+    if (!nyxPrompt) {
+      const output = 'Usage: /nyx <offensive security prompt>\nExample: /nyx scan 192.168.1.0/24 with nmap service detection';
+      if (asJson) {
+        process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${output}\n`);
+      }
+      return;
+    }
+    routedPrompt = `[ROUTE_DIRECT:NyxAgent] ${nyxPrompt}`;
+  } else if (normalized.startsWith('/search ')) {
     const searchQuery = prompt.trim().slice('/search '.length).trim();
     if (!searchQuery) {
       const output = 'Usage: /search <query>\nExample: /search kali linux nmap nse scripts';

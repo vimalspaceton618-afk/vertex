@@ -2,6 +2,7 @@ import { Tool } from './Tool.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import Docker from 'dockerode';
+import { enforceToolPolicy } from '../core/policy/PolicyEngine.js';
 
 const execAsync = promisify(exec);
 
@@ -126,7 +127,7 @@ async function runRestricted(command: string, timeoutMs: number): Promise<string
 
 export class DockerSandboxTool implements Tool {
     name = 'sandbox_execute';
-    description = 'Execute a shell command in an isolated Docker sandbox (Alpine Linux container). No network access, memory-limited, capability-dropped. Falls back to a restricted host process if Docker is unavailable. Use for running untrusted scripts safely.';
+    description = 'Execute a shell command in an isolated Docker sandbox (Alpine Linux container). No network access, memory-limited, capability-dropped. By default, fails closed if Docker is unavailable. Use for running untrusted scripts safely.';
     schema = {
         type: 'object',
         properties: {
@@ -148,20 +149,30 @@ export class DockerSandboxTool implements Tool {
         requestConfirmation: (msg: string) => Promise<boolean>
     ): Promise<string> {
         const timeoutMs = args.timeoutMs ?? SANDBOX_TIMEOUT_MS;
-        const approved = await requestConfirmation(
-            `[VERTEX SANDBOX] Wants to run inside isolated container:\n  > ${args.command}\nAllow sandboxed execution? (Y/n)`
-        );
-        if (!approved) {
-            return '[USER OVERRIDE]: Sandboxed execution was denied.';
-        }
+        const policyBlock = await enforceToolPolicy({
+            toolName: this.name,
+            riskLevel: 'local_scan',
+            commandPreview: args.command,
+            promptLabel: 'Docker sandbox'
+        }, requestConfirmation);
+        if (policyBlock) return policyBlock;
 
         const dockerAvailable = await isDockerAvailable();
 
         if (dockerAvailable) {
             const result = await runInDocker(args.command, timeoutMs);
             return `[DOCKER SANDBOX OUTPUT]:\n${result}`;
-        } else {
-            return `[FALLBACK — Docker Unavailable]: Running in restricted host process.\n${await runRestricted(args.command, timeoutMs)}`;
         }
+
+        const allowFallback = (process.env.SANDBOX_ALLOW_HOST_FALLBACK || 'false').toLowerCase() === 'true';
+        if (!allowFallback) {
+            return '[SANDBOX BLOCKED]: Docker is unavailable and SANDBOX_ALLOW_HOST_FALLBACK is not true. Install/start Docker, then run: docker pull alpine:latest';
+        }
+
+        const approvedFallback = await requestConfirmation(
+            `[VERTEX SANDBOX FALLBACK] Docker is unavailable. Run on restricted host process instead?\n  > ${args.command}\nThis is not a real sandbox. Allow? (Y/n)`
+        );
+        if (!approvedFallback) return '[USER OVERRIDE]: Host fallback denied.';
+        return `[FALLBACK — Docker Unavailable]: Running in restricted host process.\n${await runRestricted(args.command, timeoutMs)}`;
     }
 }

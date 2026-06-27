@@ -5,6 +5,8 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as net from 'net';
+import { enforceToolPolicy } from '../core/policy/PolicyEngine.js';
+import { resolveInsideWorkspace } from './PathSecurity.js';
 
 const execAsync = promisify(exec);
 const MAX_OUT = 12_000;
@@ -70,10 +72,18 @@ export class PortScanTool implements Tool {
         additionalProperties: false
     };
 
-    async execute(args: { host: string; ports?: string; timeoutMs?: number }): Promise<string> {
+    async execute(args: { host: string; ports?: string; timeoutMs?: number }, requestConfirmation: (msg: string) => Promise<boolean>): Promise<string> {
         const host = args.host.trim();
         const portsArg = args.ports || '21,22,23,25,53,80,110,143,443,445,3306,3389,5432,6379,8080,8443,27017';
         const timeout = args.timeoutMs ?? 500;
+        const policyBlock = await enforceToolPolicy({
+            toolName: this.name,
+            riskLevel: 'local_scan',
+            targets: [host],
+            commandPreview: `port scan ${host} ports ${portsArg}`,
+            promptLabel: 'Port scan'
+        }, requestConfirmation);
+        if (policyBlock) return policyBlock;
 
         // Try nmap first
         const nmapResult = await shell(`nmap -p ${portsArg} --open -T4 ${host}`, 60_000);
@@ -160,7 +170,14 @@ export class FileIntegrityTool implements Tool {
     };
 
     async execute(args: { targetPath: string; recursive?: boolean }): Promise<string> {
-        const target = path.resolve(args.targetPath);
+        let target: string;
+        try {
+            target = process.env.SECURITY_TOOLS_ALLOW_OUTSIDE_WORKSPACE === 'true'
+                ? path.resolve(args.targetPath)
+                : resolveInsideWorkspace(args.targetPath);
+        } catch (error: any) {
+            return `[FILE INTEGRITY ERROR]: ${error.message}`;
+        }
         const recursive = args.recursive ?? false;
 
         if (!fs.existsSync(target)) {
@@ -251,7 +268,14 @@ export class EnvSecretsScannerTool implements Tool {
     };
 
     async execute(args: { targetPath: string }): Promise<string> {
-        const target = path.resolve(args.targetPath);
+        let target: string;
+        try {
+            target = process.env.SECURITY_TOOLS_ALLOW_OUTSIDE_WORKSPACE === 'true'
+                ? path.resolve(args.targetPath)
+                : resolveInsideWorkspace(args.targetPath);
+        } catch (error: any) {
+            return `[SECRETS SCAN ERROR]: ${error.message}`;
+        }
         if (!fs.existsSync(target)) {
             return `[SECRETS SCAN ERROR]: Path does not exist: ${target}`;
         }

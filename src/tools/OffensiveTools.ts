@@ -2,6 +2,7 @@ import { Tool } from './Tool.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { SharedContext } from '../core/agent/SharedContext.js';
+import { enforceToolPolicy, RiskLevel } from '../core/policy/PolicyEngine.js';
 
 const execAsync = promisify(exec);
 const MAX_OUTPUT = 16_000;
@@ -42,6 +43,21 @@ async function whichBinary(name: string, envOverride?: string): Promise<string |
     }
 }
 
+function extractTargetsFromText(text: string): string[] {
+    const targets = new Set<string>();
+    const ipv4 = /\b(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?\b/g;
+    const hostFlags = /\b(?:RHOSTS?|LHOST|TARGET|HOST)\s+([a-zA-Z0-9._:-]+(?:\/\d{1,2})?)/gi;
+    for (const match of text.matchAll(ipv4)) targets.add(match[0]);
+    for (const match of text.matchAll(hostFlags)) targets.add(match[1]);
+    return [...targets];
+}
+
+function nmapRisk(args: { target: string; scripts?: string; flags?: string }): RiskLevel {
+    const riskyText = `${args.scripts || ''} ${args.flags || ''}`.toLowerCase();
+    if (/\b(vuln|brute|auth|exploit|dos|intrusive)\b/.test(riskyText)) return 'exploit';
+    return 'local_scan';
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // 1. METASPLOIT FRAMEWORK
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -71,14 +87,17 @@ export class MetasploitTool extends Tool {
             return '[TOOL PREREQ]: msfconsole not found.\nInstall: https://docs.metasploit.com/docs/using-metasploit/getting-started/nightly-installers.html\nOr set MSF_PATH env var to the msfconsole binary path.';
         }
 
-        const approved = await requestConfirmation(
-            `[NYX ARSENAL — METASPLOIT] Execute:\n  > ${args.command}\nThis runs msfconsole on the host. Allow? (Y/n)`
-        );
-        if (!approved) return '[USER OVERRIDE]: Metasploit execution denied.';
-
         const timeoutMs = args.timeoutMs ?? DEFAULT_OFFENSIVE_TIMEOUT_MS;
         const escaped = args.command.replace(/"/g, '\\"');
         const cmd = `"${msfPath}" -qx "${escaped}"`;
+        const policyBlock = await enforceToolPolicy({
+            toolName: this.name,
+            riskLevel: 'exploit',
+            targets: extractTargetsFromText(args.command),
+            commandPreview: args.command,
+            promptLabel: 'Metasploit'
+        }, requestConfirmation);
+        if (policyBlock) return policyBlock;
 
         SharedContext.appendAudit({ event: 'msf_execute', command: args.command });
 
@@ -134,7 +153,7 @@ export class NmapNseTool extends Tool {
         flags?: string;
         outputFormat?: string;
         timeoutMs?: number;
-    }): Promise<string> {
+    }, requestConfirmation: (msg: string) => Promise<boolean>): Promise<string> {
         const nmapPath = await whichBinary('nmap', process.env.NMAP_PATH);
         if (!nmapPath) {
             return '[TOOL PREREQ]: nmap not found.\nInstall: https://nmap.org/download.html\nWindows: choco install nmap / winget install nmap\nLinux: apt install nmap / yum install nmap';
@@ -155,6 +174,15 @@ export class NmapNseTool extends Tool {
         parts.push(args.target);
         const cmd = parts.join(' ');
         const timeoutMs = args.timeoutMs ?? DEFAULT_OFFENSIVE_TIMEOUT_MS;
+        const riskLevel = nmapRisk(args);
+        const policyBlock = await enforceToolPolicy({
+            toolName: this.name,
+            riskLevel,
+            targets: [args.target],
+            commandPreview: cmd,
+            promptLabel: riskLevel === 'exploit' ? 'Nmap NSE active/vulnerability scan' : 'Nmap scan'
+        }, requestConfirmation);
+        if (policyBlock) return policyBlock;
 
         SharedContext.appendAudit({ event: 'nmap_scan', target: args.target, flags: args.flags, scripts: args.scripts });
 
@@ -213,7 +241,7 @@ export class BurpSuiteTool extends Tool {
         url?: string;
         taskId?: string;
         config?: string;
-    }): Promise<string> {
+    }, requestConfirmation: (msg: string) => Promise<boolean>): Promise<string> {
         const base = this.getBaseUrl();
         const headers = this.getHeaders();
 
@@ -221,6 +249,14 @@ export class BurpSuiteTool extends Tool {
             switch (args.action) {
                 case 'scan': {
                     if (!args.url) return '[BURP ERROR]: URL is required for scan action.';
+                    const policyBlock = await enforceToolPolicy({
+                        toolName: this.name,
+                        riskLevel: 'external_scan',
+                        targets: [args.url],
+                        commandPreview: `Burp active scan ${args.url}`,
+                        promptLabel: 'Burp active scan'
+                    }, requestConfirmation);
+                    if (policyBlock) return policyBlock;
                     const scanConfig: any = { urls: [args.url] };
                     if (args.config) {
                         scanConfig.scan_configurations = [{ name: args.config, type: 'NamedConfiguration' }];
@@ -370,10 +406,14 @@ export class CrackMapExecTool extends Tool {
         if (args.extraFlags) parts.push(args.extraFlags);
 
         const cmdLine = parts.join(' ');
-        const approved = await requestConfirmation(
-            `[NYX ARSENAL — CRACKMAPEXEC] Execute:\n  > ${cmdLine}\nThis performs active network operations. Allow? (Y/n)`
-        );
-        if (!approved) return '[USER OVERRIDE]: CrackMapExec execution denied.';
+        const policyBlock = await enforceToolPolicy({
+            toolName: this.name,
+            riskLevel: args.username || args.password || args.command || args.extraFlags ? 'credential_attack' : 'external_scan',
+            targets: [args.target],
+            commandPreview: cmdLine,
+            promptLabel: 'CrackMapExec/NetExec'
+        }, requestConfirmation);
+        if (policyBlock) return policyBlock;
 
         const timeoutMs = args.timeoutMs ?? DEFAULT_OFFENSIVE_TIMEOUT_MS;
         SharedContext.appendAudit({
@@ -418,14 +458,17 @@ export class SliverTool extends Tool {
             return '[TOOL PREREQ]: sliver not found.\nInstall: https://github.com/BishopFox/sliver/wiki/Getting-Started\nLinux one-liner: curl https://sliver.sh/install | sudo bash\nOr set SLIVER_PATH env var.';
         }
 
-        const approved = await requestConfirmation(
-            `[NYX ARSENAL — SLIVER C2] Execute:\n  > ${args.command}\nThis interacts with the Sliver C2 framework. Allow? (Y/n)`
-        );
-        if (!approved) return '[USER OVERRIDE]: Sliver execution denied.';
-
         const timeoutMs = args.timeoutMs ?? DEFAULT_OFFENSIVE_TIMEOUT_MS;
         const escaped = args.command.replace(/"/g, '\\"');
         const cmd = `"${sliverPath}" -e "${escaped}"`;
+        const policyBlock = await enforceToolPolicy({
+            toolName: this.name,
+            riskLevel: 'c2',
+            targets: extractTargetsFromText(args.command),
+            commandPreview: args.command,
+            promptLabel: 'Sliver C2'
+        }, requestConfirmation);
+        if (policyBlock) return policyBlock;
 
         SharedContext.appendAudit({ event: 'sliver_execute', command: args.command });
 

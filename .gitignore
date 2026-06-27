@@ -28,6 +28,7 @@ ENV/
 .env
 *.env
 !.env.example
+.vertex_plugins/scope.json
 
 # Data (too large for git)
 *.index
