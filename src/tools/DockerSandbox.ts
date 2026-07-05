@@ -89,13 +89,20 @@ async function runInDocker(command: string, timeoutMs: number): Promise<string> 
         });
 
         // Timeout race
-        const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, timeoutMs));
+        let timedOut = false;
+        const timeoutPromise = new Promise<void>((resolve) => {
+            setTimeout(() => { timedOut = true; resolve(); }, timeoutMs);
+        });
 
         await container.start();
         await Promise.race([
             container.wait().then(() => outputPromise),
             timeoutPromise,
         ]);
+
+        if (timedOut) {
+            try { await container.kill(); } catch { /* may have already exited */ }
+        }
 
         return output || '[SANDBOX]: Command completed with no output.';
     } finally {

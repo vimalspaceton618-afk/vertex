@@ -27,16 +27,22 @@ export class ProcessManagementTool extends Tool {
                 return `Here are the currently running processes:\n${stdout.substring(0, 4000)}... (truncated if too long)`;
             } 
             else if (args.action === 'kill' && args.target) {
-                const approved = await requestConfirmation(`[CRITICAL DANGER] Allow VERTEX to KILL process '${args.target}'?`);
+                const targetClean = args.target.trim();
+                const isPid = /^\d+$/.test(targetClean);
+                const isName = /^[a-zA-Z0-9.\-_]+$/.test(targetClean);
+
+                if (!isPid && !isName) {
+                    return `[PROCESS ERROR]: Invalid target format. Must be a numeric PID or a valid process name (alphanumeric, dots, hyphens, underscores).`;
+                }
+
+                const approved = await requestConfirmation(`[CRITICAL DANGER] Allow VERTEX to KILL process '${targetClean}'?`);
                 if (!approved) return "[OPERATION CANCELLED BY USER]";
                 
-                // Determine if target is PID or Name for windows
-                const isPid = !isNaN(Number(args.target));
                 let cmd = "";
                 if (isWin) {
-                    cmd = isPid ? `taskkill /F /PID ${args.target}` : `taskkill /F /IM ${args.target}`;
+                    cmd = isPid ? `taskkill /F /PID ${targetClean}` : `taskkill /F /IM ${targetClean}`;
                 } else {
-                    cmd = `kill -9 ${args.target}`;
+                    cmd = `kill -9 ${targetClean}`;
                 }
 
                 const { stdout, stderr } = await execAsync(cmd);

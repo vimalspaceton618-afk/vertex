@@ -496,10 +496,16 @@ class SqliteQueryTool extends Tool {
         if (!trimmed.startsWith('select')) {
             return '[CONNECTOR ERROR]: Only SELECT queries are allowed.';
         }
+        if (args.sql.includes(';')) {
+            return '[CONNECTOR ERROR]: Multiple statements are not allowed. Use a single SELECT query.';
+        }
         const dbPath = path.resolve(process.cwd(), args.dbPath);
         if (!fs.existsSync(dbPath)) return `[CONNECTOR ERROR]: Database not found at ${dbPath}`;
         try {
-            const { stdout, stderr } = await execAsync(`sqlite3 -header -csv "${dbPath}" "${args.sql.replace(/"/g, '""')}"`, {
+            const { execFile: execFileCb } = await import('child_process');
+            const { promisify: prom } = await import('util');
+            const execFileP = prom(execFileCb);
+            const { stdout, stderr } = await execFileP('sqlite3', ['-header', '-csv', dbPath, args.sql], {
                 timeout: 30000,
                 maxBuffer: 1024 * 1024
             });
@@ -852,8 +858,14 @@ class MeshEnvelopeClaimTool extends Tool {
             const full = path.join(dir, file);
             const envelope = JSON.parse(fs.readFileSync(full, 'utf-8'));
             if (envelope.status !== 'queued') continue;
-            const unsigned = { ...envelope };
-            delete unsigned.signature;
+            // Reconstruct the exact object shape used at signing time
+            const unsigned = {
+                envelopeId: envelope.envelopeId,
+                taskType: envelope.taskType,
+                payload: envelope.payload,
+                createdAt: envelope.createdAt,
+                status: envelope.status
+            };
             const expected = signEnvelope(JSON.stringify(unsigned));
             if (expected !== envelope.signature) continue;
             envelope.status = 'claimed';

@@ -1,0 +1,233 @@
+﻿diff --git a/src/core/agent/BaseAgent.ts b/src/core/agent/BaseAgent.ts
+index 2f33a1f..d7d4a39 100644
+--- a/src/core/agent/BaseAgent.ts
++++ b/src/core/agent/BaseAgent.ts
+@@ -127,6 +127,14 @@ export abstract class BaseAgent {
+ 
+     protected abstract setupTools(): void;
+ 
++    public clearHistory(): void {
++        const systemPrompt = this.history.find(m => m.role === 'system')?.content || '';
++        this.history = [];
++        if (systemPrompt) {
++            this.history.push({ role: 'system', content: systemPrompt });
++        }
++    }
++
+     public async *run(input: string, requestConfirmation: (msg: string) => Promise<boolean>): AsyncGenerator<string> {
+         this.history.push({ role: 'user', content: input });
+ 
+@@ -153,106 +161,130 @@ export abstract class BaseAgent {
+             }
+             let currentResponse = "";
+             let currentToolCalls: Record<number, any> = {};
++            let streamSuccess = false;
++            let retryAttempt = 0;
++            const MAX_RETRIES = 15;
+ 
+-            try {
+-                // If there are no tools registered for this agent, don't pass 'tools' key to OpenAI
+-                const toolsConfig = this.registry.getToolsSchema().length > 0 
+-                  ? { tools: this.registry.getToolsSchema() as any } 
+-                  : {};
++            while (!streamSuccess && retryAttempt < MAX_RETRIES) {
++                try {
++                    // If there are no tools registered for this agent, don't pass 'tools' key to OpenAI
++                    const toolsConfig = this.registry.getToolsSchema().length > 0 
++                      ? { tools: this.registry.getToolsSchema() as any } 
++                      : {};
+ 
+-                const candidates = getBrainCandidates(this.name);
+-                let stream: Awaited<ReturnType<OpenAI['chat']['completions']['create']>> | null = null;
+-                const providerErrors: string[] = [];
+-                let activeProviderLabel = '';
+-                for (const candidate of candidates) {
+-                    try {
+-                        const client = getClientFor(candidate.baseURL, candidate.apiKey);
+-                        activeProviderLabel = `${candidate.provider}:${candidate.model}`;
+-                        stream = await client.chat.completions.create({
+-                            model: candidate.model,
+-                            messages: this.history as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
+-                            stream: true,
+-                            ...toolsConfig
+-                        });
+-                        break;
+-                    } catch (providerError: any) {
+-                        const formatted = formatProviderFailure(candidate, providerError);
+-                        providerErrors.push(formatted);
+-                        yield `\n[${this.name} BRAIN FALLBACK]: ${formatted}`;
++                    const candidates = getBrainCandidates(this.name);
++                    let stream: Awaited<ReturnType<OpenAI['chat']['completions']['create']>> | null = null;
++                    const providerErrors: string[] = [];
++                    let activeProviderLabel = '';
++                    for (const candidate of candidates) {
++                        try {
++                            const client = getClientFor(candidate.baseURL, candidate.apiKey);
++                            activeProviderLabel = `${candidate.provider}:${candidate.model}`;
++                            stream = await client.chat.completions.create({
++                                model: candidate.model,
++                                messages: this.history as OpenAI.Chat.Completions.ChatCompletionMessageParam[],
++                                stream: true,
++                                max_tokens: process.env.MAX_TOKENS ? parseInt(process.env.MAX_TOKENS) : undefined,
++                                ...toolsConfig
++                            });
++                            break;
++                        } catch (providerError: any) {
++                            const formatted = formatProviderFailure(candidate, providerError);
++                            providerErrors.push(formatted);
++                            // Do not yield fallback message if we are in a hidden retry loop to avoid spamming the console
++                            if (retryAttempt === 0) yield `\n[${this.name} BRAIN FALLBACK]: ${formatted}`;
++                        }
+                     }
+-                }
+-                if (!stream) {
+-                    const guidance =
+-                        '\nTry: 1) set LOCAL_BASE_URL correctly, 2) run local server, 3) switch BRAIN_MODE to local/hybrid, 4) update cloud model/key/quota.';
+-                    throw new Error(`All brain providers failed.\n${providerErrors.join('\n')}${guidance}`);
+-                }
+-                yield `\n[${this.name} BRAIN ROUTE]: ${activeProviderLabel}\n`;
+-
+-                for await (const chunk of stream) {
+-                    const delta = chunk.choices[0]?.delta;
+-                    
+-                    if (delta?.content) {
+-                        currentResponse += delta.content;
+-                        // Yield agent specific prefix
+-                        yield delta.content;
++                    if (!stream) {
++                        const guidance =
++                            '\nTry: 1) set LOCAL_BASE_URL correctly, 2) run local server, 3) switch BRAIN_MODE to local/hybrid, 4) update cloud model/key/quota.';
++                        throw new Error(`All brain providers failed.\n${providerErrors.join('\n')}${guidance}`);
+                     }
+                     
+-                    if (delta?.tool_calls) {
+-                        for (const toolCall of delta.tool_calls) {
+-                            const index = toolCall.index;
+-                            if (!currentToolCalls[index]) {
+-                                currentToolCalls[index] = { id: toolCall.id, type: 'function', function: { name: toolCall.function?.name, arguments: '' }};
+-                            }
+-                            if (toolCall.function?.arguments) {
+-                                currentToolCalls[index].function.arguments += toolCall.function.arguments;
++                    if (retryAttempt === 0) yield `\n[${this.name} BRAIN ROUTE]: ${activeProviderLabel}\n`;
++
++                    for await (const chunk of stream) {
++                        const delta = chunk.choices[0]?.delta;
++                        
++                        if (delta?.content) {
++                            currentResponse += delta.content;
++                            yield delta.content;
++                        }
++                        
++                        if (delta?.tool_calls) {
++                            for (const toolCall of delta.tool_calls) {
++                                const index = toolCall.index;
++                                if (!currentToolCalls[index]) {
++                                    currentToolCalls[index] = { id: toolCall.id, type: 'function', function: { name: toolCall.function?.name, arguments: '' }};
++                                }
++                                if (toolCall.function?.arguments) {
++                                    currentToolCalls[index].function.arguments += toolCall.function.arguments;
++                                }
+                             }
+                         }
+                     }
++
++                    streamSuccess = true; // Fully consumed stream without throwing
++                } catch (error: any) {
++                    const message = error.message || '';
++                    const isRateLimit = message.includes('429') || message.toLowerCase().includes('rate limit') || message.toLowerCase().includes('resourceexhausted');
++                    
++                    if (isRateLimit && retryAttempt < MAX_RETRIES - 1) {
++                        retryAttempt++;
++                        const backoffMs = Math.min(2000 * Math.pow(1.5, retryAttempt), 30000);
++                        yield `\n[RATE LIMIT HIT]: Retrying in ${Math.round(backoffMs/1000)}s (Attempt ${retryAttempt}/${MAX_RETRIES})...\n`;
++                        await new Promise(r => setTimeout(r, backoffMs));
++                        // Reset partial states for retry
++                        currentResponse = "";
++                        currentToolCalls = {};
++                    } else {
++                        const errorMessage = `\n[${this.name} SYSTEM ERROR]: ${error.message}`;
++                        yield errorMessage;
++                        this.history.push({ role: 'assistant', content: errorMessage });
++                        keepRunning = false;
++                        break; // Break the retry loop
++                    }
+                 }
++            }
++
++            if (!keepRunning) continue;
+ 
+-                const toolCallsArray = Object.values(currentToolCalls);
++            const toolCallsArray = Object.values(currentToolCalls);
++            
++            if (toolCallsArray.length > 0) {
++                this.history.push({ role: 'assistant', content: currentResponse || null, tool_calls: toolCallsArray });
+                 
+-                if (toolCallsArray.length > 0) {
+-                    this.history.push({ role: 'assistant', content: currentResponse || null, tool_calls: toolCallsArray });
++                for (const toolCall of toolCallsArray) {
++                    const toolName = toolCall.function.name;
++                    const tool = this.registry.getTool(toolName);
+                     
+-                    for (const toolCall of toolCallsArray) {
+-                        const toolName = toolCall.function.name;
+-                        const tool = this.registry.getTool(toolName);
+-                        
+-                        yield `\n\n[${this.name} TOOL]: Executing ${toolName}...`;
+-                        
+-                        let resultStr = "";
+-                        if (tool) {
+-                            try {
+-                                const args = JSON.parse(toolCall.function.arguments);
+-                                const executionResult = await tool.execute(args, requestConfirmation);
+-                                if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
+-                                    for await (const chunk of executionResult as any) {
+-                                        yield chunk;
+-                                        resultStr += chunk;
+-                                    }
+-                                } else {
+-                                    resultStr = executionResult as string;
++                    yield `\n\n[${this.name} TOOL]: Executing ${toolName}...`;
++                    
++                    let resultStr = "";
++                    if (tool) {
++                        try {
++                            const args = JSON.parse(toolCall.function.arguments);
++                            const executionResult = await tool.execute(args, requestConfirmation);
++                            if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
++                                for await (const chunk of executionResult as any) {
++                                    yield chunk;
++                                    resultStr += chunk;
+                                 }
+-                            } catch (e: any) {
+-                                resultStr = `[TOOL PARSE OR EXECUTION ERROR]: ${e.message}`;
++                            } else {
++                                resultStr = executionResult as string;
+                             }
+-                        } else {
+-                            resultStr = `[ERROR]: Tool ${toolName} not found.`;
++                        } catch (e: any) {
++                            resultStr = `[TOOL PARSE OR EXECUTION ERROR]: ${e.message}`;
+                         }
+-                        
+-                        this.history.push({ role: 'tool', tool_call_id: toolCall.id, name: toolName, content: resultStr });
+-                        yield `\n[${this.name} TOOL RESULT]: ${resultStr.substring(0, 100)}...\n`;
++                    } else {
++                        resultStr = `[ERROR]: Tool ${toolName} not found.`;
+                     }
+-                } else {
+-                    this.history.push({ role: 'assistant', content: currentResponse });
+-                    keepRunning = false;
++                    
++                    this.history.push({ role: 'tool', tool_call_id: toolCall.id, name: toolName, content: resultStr });
++                    yield `\n[${this.name} TOOL RESULT]: ${resultStr.substring(0, 100)}...\n`;
+                 }
+-
+-            } catch (error: any) {
+-                const errorMessage = `\n[${this.name} SYSTEM ERROR]: ${error.message}`;
+-                yield errorMessage;
+-                this.history.push({ role: 'assistant', content: errorMessage });
++            } else {
++                this.history.push({ role: 'assistant', content: currentResponse });
+                 keepRunning = false;
+             }
+         }

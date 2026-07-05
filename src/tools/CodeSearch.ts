@@ -1,11 +1,11 @@
 import { Tool } from './Tool.js';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { getWorkspaceRoot, resolveInsideWorkspace } from './PathSecurity.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 async function walkFiles(dir: string, files: string[] = []): Promise<string[]> {
     const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -40,9 +40,14 @@ export class CodeSearchTool extends Tool {
         const root = getWorkspaceRoot();
         const target = args.targetPath ? resolveInsideWorkspace(args.targetPath) : root;
         try {
-            const escaped = args.pattern.replace(/"/g, '\\"');
-            const rgCmd = `rg -n --hidden --glob "!node_modules/**" --glob "!dist/**" --max-count ${maxResults} "${escaped}" "${target}"`;
-            const { stdout } = await execAsync(rgCmd, { cwd: root, timeout: 20000, maxBuffer: 1024 * 1024 });
+            const rgArgs = [
+                '-n', '--hidden',
+                '--glob', '!node_modules/**',
+                '--glob', '!dist/**',
+                '--max-count', String(maxResults),
+                '--', args.pattern, target
+            ];
+            const { stdout } = await execFileAsync('rg', rgArgs, { cwd: root, timeout: 20000, maxBuffer: 1024 * 1024 });
             const output = stdout.trim();
             if (!output) return 'No matches found.';
             return output;

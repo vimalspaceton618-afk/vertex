@@ -1,5 +1,5 @@
 import { Tool } from './Tool.js';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import { SharedContext } from '../core/agent/SharedContext.js';
 import { enforceToolPolicy, RiskLevel } from '../core/policy/PolicyEngine.js';
@@ -29,10 +29,59 @@ async function shell(cmd: string, timeoutMs = DEFAULT_OFFENSIVE_TIMEOUT_MS): Pro
     }
 }
 
+async function runCommandSafely(file: string, args: string[], timeoutMs = DEFAULT_OFFENSIVE_TIMEOUT_MS): Promise<string> {
+    return new Promise((resolve) => {
+        const isWin = process.platform === 'win32';
+        const useShell = isWin && (file.toLowerCase().endsWith('.bat') || file.toLowerCase().endsWith('.cmd'));
+
+        const child = spawn(file, args, {
+            timeout: timeoutMs,
+            shell: useShell,
+            env: { ...process.env }
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        child.stdout?.on('data', (data) => {
+            stdout += data.toString();
+        });
+
+        child.stderr?.on('data', (data) => {
+            stderr += data.toString();
+        });
+
+        child.on('close', (code) => {
+            const out = truncate(stdout.trim(), MAX_OUTPUT);
+            const err = truncate(stderr.trim(), MAX_OUTPUT);
+            const result = out + (err ? `\nSTDERR: ${err}` : '');
+            resolve(result);
+        });
+
+        child.on('error', (err) => {
+            const errStr = truncate(err.message || 'Unknown error', MAX_OUTPUT);
+            resolve(`[EXECUTION ERROR]: ${errStr}`);
+        });
+    });
+}
+
+function splitArgs(extraFlags: string): string[] {
+    const matches = extraFlags.match(/"[^"]*"|'[^']*'|\S+/g);
+    if (!matches) return [];
+    return matches.map(m => {
+        if ((m.startsWith('"') && m.endsWith('"')) || (m.startsWith("'") && m.endsWith("'"))) {
+            return m.slice(1, -1);
+        }
+        return m;
+    });
+}
+
 const isWin = process.platform === 'win32';
 
 async function whichBinary(name: string, envOverride?: string): Promise<string | null> {
     if (envOverride && envOverride.trim()) return envOverride.trim();
+    // Validate binary name to prevent injection through where/which
+    if (!/^[a-zA-Z0-9._-]+$/.test(name)) return null;
     try {
         const cmd = isWin ? `where ${name}` : `which ${name}`;
         const { stdout } = await execAsync(cmd, { timeout: 5000 });
@@ -88,20 +137,18 @@ export class MetasploitTool extends Tool {
         }
 
         const timeoutMs = args.timeoutMs ?? DEFAULT_OFFENSIVE_TIMEOUT_MS;
-        const escaped = args.command.replace(/"/g, '\\"');
-        const cmd = `"${msfPath}" -qx "${escaped}"`;
         const policyBlock = await enforceToolPolicy({
             toolName: this.name,
             riskLevel: 'exploit',
             targets: extractTargetsFromText(args.command),
-            commandPreview: args.command,
+            commandPreview: `msfconsole -qx "${args.command}"`,
             promptLabel: 'Metasploit'
         }, requestConfirmation);
         if (policyBlock) return policyBlock;
 
         SharedContext.appendAudit({ event: 'msf_execute', command: args.command });
 
-        const result = await shell(cmd, timeoutMs);
+        const result = await runCommandSafely(msfPath, ['-qx', args.command], timeoutMs);
         return `[METASPLOIT OUTPUT]:\n${result || 'Command completed with no output.'}`;
     }
 }
@@ -159,34 +206,34 @@ export class NmapNseTool extends Tool {
             return '[TOOL PREREQ]: nmap not found.\nInstall: https://nmap.org/download.html\nWindows: choco install nmap / winget install nmap\nLinux: apt install nmap / yum install nmap';
         }
 
-        const parts: string[] = [nmapPath];
+        const cmdArgs: string[] = [];
 
-        if (args.flags) parts.push(args.flags);
-        if (args.ports) parts.push(`-p ${args.ports}`);
-        if (args.scripts) parts.push(`--script=${args.scripts}`);
+        if (args.flags) cmdArgs.push(...splitArgs(args.flags));
+        if (args.ports) { cmdArgs.push('-p'); cmdArgs.push(args.ports); }
+        if (args.scripts) cmdArgs.push(`--script=${args.scripts}`);
 
         switch (args.outputFormat) {
-            case 'xml': parts.push('-oX -'); break;
-            case 'grepable': parts.push('-oG -'); break;
+            case 'xml': cmdArgs.push('-oX', '-'); break;
+            case 'grepable': cmdArgs.push('-oG', '-'); break;
             default: break;
         }
 
-        parts.push(args.target);
-        const cmd = parts.join(' ');
+        cmdArgs.push(args.target);
+        const cmdLinePreview = [nmapPath, ...cmdArgs].join(' ');
         const timeoutMs = args.timeoutMs ?? DEFAULT_OFFENSIVE_TIMEOUT_MS;
         const riskLevel = nmapRisk(args);
         const policyBlock = await enforceToolPolicy({
             toolName: this.name,
             riskLevel,
             targets: [args.target],
-            commandPreview: cmd,
+            commandPreview: cmdLinePreview,
             promptLabel: riskLevel === 'exploit' ? 'Nmap NSE active/vulnerability scan' : 'Nmap scan'
         }, requestConfirmation);
         if (policyBlock) return policyBlock;
 
         SharedContext.appendAudit({ event: 'nmap_scan', target: args.target, flags: args.flags, scripts: args.scripts });
 
-        const result = await shell(cmd, timeoutMs);
+        const result = await runCommandSafely(nmapPath, cmdArgs, timeoutMs);
         return `[NMAP SCAN RESULTS]:\n${result || 'Scan completed with no output.'}`;
     }
 }
@@ -398,19 +445,19 @@ export class CrackMapExecTool extends Tool {
             return '[TOOL PREREQ]: Neither nxc (NetExec) nor crackmapexec found.\nInstall NetExec: pip install netexec\nInstall CME: pip install crackmapexec\nOr set CME_PATH env var.';
         }
 
-        const parts: string[] = [cmePath, args.protocol, args.target];
-        if (args.username) parts.push(`-u "${args.username}"`);
-        if (args.password) parts.push(`-p "${args.password}"`);
-        if (args.domain) parts.push(`-d "${args.domain}"`);
-        if (args.command) parts.push(`-x "${args.command}"`);
-        if (args.extraFlags) parts.push(args.extraFlags);
+        const cmdArgs: string[] = [args.protocol, args.target];
+        if (args.username) cmdArgs.push('-u', args.username);
+        if (args.password) cmdArgs.push('-p', args.password);
+        if (args.domain) cmdArgs.push('-d', args.domain);
+        if (args.command) cmdArgs.push('-x', args.command);
+        if (args.extraFlags) cmdArgs.push(...splitArgs(args.extraFlags));
 
-        const cmdLine = parts.join(' ');
+        const cmdLinePreview = [binaryName, ...cmdArgs].join(' ');
         const policyBlock = await enforceToolPolicy({
             toolName: this.name,
             riskLevel: args.username || args.password || args.command || args.extraFlags ? 'credential_attack' : 'external_scan',
             targets: [args.target],
-            commandPreview: cmdLine,
+            commandPreview: cmdLinePreview,
             promptLabel: 'CrackMapExec/NetExec'
         }, requestConfirmation);
         if (policyBlock) return policyBlock;
@@ -424,7 +471,7 @@ export class CrackMapExecTool extends Tool {
             flags: args.extraFlags
         });
 
-        const result = await shell(cmdLine, timeoutMs);
+        const result = await runCommandSafely(cmePath, cmdArgs, timeoutMs);
         return `[CRACKMAPEXEC OUTPUT]:\n${result || 'Command completed with no output.'}`;
     }
 }
@@ -459,20 +506,18 @@ export class SliverTool extends Tool {
         }
 
         const timeoutMs = args.timeoutMs ?? DEFAULT_OFFENSIVE_TIMEOUT_MS;
-        const escaped = args.command.replace(/"/g, '\\"');
-        const cmd = `"${sliverPath}" -e "${escaped}"`;
         const policyBlock = await enforceToolPolicy({
             toolName: this.name,
             riskLevel: 'c2',
             targets: extractTargetsFromText(args.command),
-            commandPreview: args.command,
+            commandPreview: `sliver -e "${args.command}"`,
             promptLabel: 'Sliver C2'
         }, requestConfirmation);
         if (policyBlock) return policyBlock;
 
         SharedContext.appendAudit({ event: 'sliver_execute', command: args.command });
 
-        const result = await shell(cmd, timeoutMs);
+        const result = await runCommandSafely(sliverPath, ['-e', args.command], timeoutMs);
         return `[SLIVER C2 OUTPUT]:\n${result || 'Command completed with no output.'}`;
     }
 }

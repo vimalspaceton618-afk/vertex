@@ -170,8 +170,8 @@ class BrowserSearchTool extends Tool {
 }
 
 export class BrowserAgent extends BaseAgent {
-    private browser: Browser | null = null;
-    private page: Page | null = null;
+    private static browser: Browser | null = null;
+    private static page: Page | null = null;
 
     constructor() {
         super(
@@ -192,23 +192,23 @@ export class BrowserAgent extends BaseAgent {
     }
 
     public async ensurePage(): Promise<Page> {
-        if (!this.browser) {
+        if (!BrowserAgent.browser) {
             try {
                 const candidates = getBrowserCandidates();
                 if (candidates.length > 0) {
-                    this.browser = await puppeteer.launch({
+                    BrowserAgent.browser = await puppeteer.launch({
                         headless: true,
                         executablePath: candidates[0],
                         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check']
                     });
                 } else {
-                    this.browser = await puppeteer.launch({
+                    BrowserAgent.browser = await puppeteer.launch({
                         headless: true,
                         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check']
                     });
                 }
                 // Prevent browser child process from holding headless CLI open.
-                this.browser.process()?.unref();
+                BrowserAgent.browser.process()?.unref();
             } catch (error: any) {
                 const candidates = getBrowserCandidates();
                 const candidateNote = candidates.length
@@ -217,46 +217,38 @@ export class BrowserAgent extends BaseAgent {
                 throw new Error(`Browser launch failed: ${error.message}\n${candidateNote}`);
             }
         }
-        if (!this.page) {
-            this.page = await this.browser.newPage();
-            await this.page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36');
-            await this.page.setViewport({ width: 1365, height: 900 });
+        if (!BrowserAgent.page) {
+            BrowserAgent.page = await BrowserAgent.browser.newPage();
+            await BrowserAgent.page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36');
+            await BrowserAgent.page.setViewport({ width: 1365, height: 900 });
         }
-        return this.page;
+        return BrowserAgent.page;
     }
 
     public async navigateUrl(url: string): Promise<string> {
-        try {
-            const page = await this.ensurePage();
-            const normalized = normalizeHttpUrl(url);
-            await page.goto(normalized, { waitUntil: 'domcontentloaded' });
-            const title = await page.title();
-            return `Navigated to ${normalized}\nTitle: ${title || '(untitled)'}`;
-        } finally {
-            await this.closeBrowser();
-        }
+        const page = await this.ensurePage();
+        const normalized = normalizeHttpUrl(url);
+        await page.goto(normalized, { waitUntil: 'domcontentloaded' });
+        const title = await page.title();
+        return `Navigated to ${normalized}\nTitle: ${title || '(untitled)'}`;
     }
 
     public async getPageContent(url?: string, maxChars = 6000): Promise<string> {
-        try {
-            const page = await this.ensurePage();
-            const normalized = url ? normalizeHttpUrl(url) : '';
-            if (normalized) {
-                await page.goto(normalized, { waitUntil: 'domcontentloaded' });
-            }
-            const title = await page.title();
-            const text = await page.evaluate(() => document.body?.innerText || '');
-            const boundedMax = Math.max(500, Math.min(Number(maxChars || 6000), 50000));
-            const body = text.length > boundedMax ? `${text.slice(0, boundedMax)}\n...[truncated]` : text;
-            return [
-                normalized ? `URL: ${normalized}` : '',
-                title ? `Title: ${title}` : '',
-                '',
-                body || '[BROWSER CONTENT]: Page returned no visible text.'
-            ].filter(Boolean).join('\n');
-        } finally {
-            await this.closeBrowser();
+        const page = await this.ensurePage();
+        const normalized = url ? normalizeHttpUrl(url) : '';
+        if (normalized) {
+            await page.goto(normalized, { waitUntil: 'domcontentloaded' });
         }
+        const title = await page.title();
+        const text = await page.evaluate(() => document.body?.innerText || '');
+        const boundedMax = Math.max(500, Math.min(Number(maxChars || 6000), 50000));
+        const body = text.length > boundedMax ? `${text.slice(0, boundedMax)}\n...[truncated]` : text;
+        return [
+            normalized ? `URL: ${normalized}` : '',
+            title ? `Title: ${title}` : '',
+            '',
+            body || '[BROWSER CONTENT]: Page returned no visible text.'
+        ].filter(Boolean).join('\n');
     }
 
     public async summarizeUrl(url: string, maxChars = 12000): Promise<string> {
@@ -277,19 +269,15 @@ export class BrowserAgent extends BaseAgent {
     }
 
     public async screenshotUrl(url: string | undefined, filePath: string): Promise<string> {
-        try {
-            const page = await this.ensurePage();
-            const normalized = url ? normalizeHttpUrl(url) : '';
-            if (normalized) {
-                await page.goto(normalized, { waitUntil: 'networkidle2' });
-            }
-            const target = resolveInsideWorkspace(filePath);
-            await fs.promises.mkdir(path.dirname(target), { recursive: true });
-            await page.screenshot({ path: target, fullPage: true });
-            return `Screenshot saved to ${target}`;
-        } finally {
-            await this.closeBrowser();
+        const page = await this.ensurePage();
+        const normalized = url ? normalizeHttpUrl(url) : '';
+        if (normalized) {
+            await page.goto(normalized, { waitUntil: 'networkidle2' });
         }
+        const target = resolveInsideWorkspace(filePath);
+        await fs.promises.mkdir(path.dirname(target), { recursive: true });
+        await page.screenshot({ path: target, fullPage: true });
+        return `Screenshot saved to ${target}`;
     }
 
     public async takeScreenshot(url: string, filePath: string) {
@@ -297,65 +285,61 @@ export class BrowserAgent extends BaseAgent {
     }
 
     public async searchDuckDuckGo(query: string, maxResults = 8): Promise<string> {
-        try {
-            const page = await this.ensurePage();
-            const boundedMax = Math.max(1, Math.min(Number(maxResults || 8), 20));
-            const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-            await page.goto(url, { waitUntil: 'domcontentloaded' });
-            const results = await page.evaluate((limit) => {
-                const decodeDuckUrl = (href: string) => {
-                    try {
-                        const parsed = new URL(href, window.location.href);
-                        const uddg = parsed.searchParams.get('uddg');
-                        return uddg ? decodeURIComponent(uddg) : parsed.href;
-                    } catch {
-                        return href;
-                    }
-                };
-                const rows = Array.from(document.querySelectorAll('.result, .web-result'));
-                return rows.map((row, index) => {
-                    const anchor = row.querySelector<HTMLAnchorElement>('.result__a, a.result__url, a');
-                    const snippet = row.querySelector<HTMLElement>('.result__snippet, .result__body, .snippet');
-                    const rawTitle = anchor?.textContent?.replace(/\s+/g, ' ').trim() || '';
-                    const rawUrl = anchor?.getAttribute('href') || '';
-                    return {
-                        rank: index + 1,
-                        title: rawTitle,
-                        url: rawUrl ? decodeDuckUrl(rawUrl) : '',
-                        snippet: snippet?.textContent?.replace(/\s+/g, ' ').trim() || ''
-                    };
-                }).filter((result) => result.title && result.url && !result.url.includes('/y.js?') && !result.snippet.toLowerCase().includes(' ad viewing ads '))
-                    .slice(0, limit)
-                    .map((result, index) => ({ ...result, rank: index + 1 }));
-            }, boundedMax);
-
-            if (!results.length) {
-                const text = await page.evaluate(() => document.body?.innerText || '');
-                if (text.toLowerCase().includes('please complete the following challenge') || text.toLowerCase().includes('bots use duckduckgo')) {
-                    await this.closeBrowser();
-                    return searchDuckDuckGoLite(query, boundedMax);
+        const page = await this.ensurePage();
+        const boundedMax = Math.max(1, Math.min(Number(maxResults || 8), 20));
+        const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+        await page.goto(url, { waitUntil: 'domcontentloaded' });
+        const results = await page.evaluate((limit) => {
+            const decodeDuckUrl = (href: string) => {
+                try {
+                    const parsed = new URL(href, window.location.href);
+                    const uddg = parsed.searchParams.get('uddg');
+                    return uddg ? decodeURIComponent(uddg) : parsed.href;
+                } catch {
+                    return href;
                 }
-                return `[DUCKDUCKGO SEARCH] No structured results found for "${query}".\n${text.slice(0, 2000)}`;
-            }
+            };
+            const rows = Array.from(document.querySelectorAll('.result, .web-result'));
+            return rows.map((row, index) => {
+                const anchor = row.querySelector<HTMLAnchorElement>('.result__a, a.result__url, a');
+                const snippet = row.querySelector<HTMLElement>('.result__snippet, .result__body, .snippet');
+                const rawTitle = anchor?.textContent?.replace(/\s+/g, ' ').trim() || '';
+                const rawUrl = anchor?.getAttribute('href') || '';
+                return {
+                    rank: index + 1,
+                    title: rawTitle,
+                    url: rawUrl ? decodeDuckUrl(rawUrl) : '',
+                    snippet: snippet?.textContent?.replace(/\s+/g, ' ').trim() || ''
+                };
+            }).filter((result) => result.title && result.url && !result.url.includes('/y.js?') && !result.snippet.toLowerCase().includes(' ad viewing ads '))
+                .slice(0, limit)
+                .map((result, index) => ({ ...result, rank: index + 1 }));
+        }, boundedMax);
 
-            return [
-                `[DUCKDUCKGO SEARCH] ${query}`,
-                `Results: ${results.length}`,
-                '',
-                ...results.map((result) => [
-                    `${result.rank}. ${result.title}`,
-                    `   URL: ${result.url}`,
-                    result.snippet ? `   Snippet: ${result.snippet}` : ''
-                ].filter(Boolean).join('\n'))
-            ].join('\n');
-        } finally {
-            await this.closeBrowser();
+        if (!results.length) {
+            const text = await page.evaluate(() => document.body?.innerText || '');
+            if (text.toLowerCase().includes('please complete the following challenge') || text.toLowerCase().includes('bots use duckduckgo')) {
+                await this.closeBrowser();
+                return searchDuckDuckGoLite(query, boundedMax);
+            }
+            return `[DUCKDUCKGO SEARCH] No structured results found for "${query}".\n${text.slice(0, 2000)}`;
         }
+
+        return [
+            `[DUCKDUCKGO SEARCH] ${query}`,
+            `Results: ${results.length}`,
+            '',
+            ...results.map((result) => [
+                `${result.rank}. ${result.title}`,
+                `   URL: ${result.url}`,
+                result.snippet ? `   Snippet: ${result.snippet}` : ''
+            ].filter(Boolean).join('\n'))
+        ].join('\n');
     }
 
     public async closeBrowser() {
-        if (this.browser) await this.browser.close();
-        this.browser = null;
-        this.page = null;
+        if (BrowserAgent.browser) await BrowserAgent.browser.close();
+        BrowserAgent.browser = null;
+        BrowserAgent.page = null;
     }
 }

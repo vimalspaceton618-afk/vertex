@@ -37,7 +37,7 @@ TOOLSET:
 - process_inspect: List and filter running system processes.
 - env_secrets_scan: Detect leaked API keys, passwords, and tokens in config files.
 - read_file: Read configuration and log files for deep inspection.
-- list_dir: Enumerate directory structures for attack surface mapping.
+- list_directory: Enumerate directory structures for attack surface mapping.
 - execute_command: Run native diagnostic commands when sandboxing is not required.
 
 REPORT FORMAT:

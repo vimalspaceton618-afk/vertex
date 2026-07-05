@@ -2,11 +2,8 @@ import { BaseAgent } from '../core/agent/BaseAgent.js';
 import { ShellTool } from '../tools/Shell.js';
 import { ProcessManagementTool } from '../tools/System.js';
 import { ReadFileTool, WriteFileTool, DeleteTool, ListDirTool } from '../tools/FileSystem.js';
-// @ts-ignore
-import Docker from 'dockerode';
 
 export class DevOpsAgent extends BaseAgent {
-    private docker = new Docker({ socketPath: process.platform === 'win32' ? '//./pipe/docker_engine' : '/var/run/docker.sock' });
 
     constructor() {
         super(

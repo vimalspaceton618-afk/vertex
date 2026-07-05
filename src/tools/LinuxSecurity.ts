@@ -28,6 +28,22 @@ async function shell(cmd: string, timeoutMs = 15000): Promise<string> {
     }
 }
 
+async function shellArgs(file: string, args: string[], timeoutMs = 15000): Promise<string> {
+    const { execFile } = await import('child_process');
+    const { promisify: prom } = await import('util');
+    const execFileAsync = prom(execFile);
+    try {
+        const { stdout, stderr } = await execFileAsync(file, args, { timeout: timeoutMs, maxBuffer: MAX_OUT * 2 });
+        const out = truncate(stdout.trim(), MAX_OUT);
+        const err = truncate(stderr.trim(), MAX_OUT);
+        return out + (err ? `\nSTDERR: ${err}` : '');
+    } catch (e: any) {
+        const out = truncate(e.stdout?.trim() || '', MAX_OUT);
+        const err = truncate(e.stderr?.trim() || e.message || '', MAX_OUT);
+        return (out + '\n' + err).trim();
+    }
+}
+
 // ─── 1. DNS Lookup ──────────────────────────────────────────────────────────
 export class DnsLookupTool implements Tool {
     name = 'dns_lookup';
@@ -44,12 +60,20 @@ export class DnsLookupTool implements Tool {
 
     async execute(args: { hostname: string; recordType?: string }): Promise<string> {
         const host = args.hostname.trim();
-        const type = args.recordType || 'A';
+        const type = (args.recordType || 'A').toUpperCase().trim();
 
-        // Try nslookup (cross-platform), then dig (Linux)
-        let result = await shell(`nslookup -type=${type} ${host}`);
+        const allowedTypes = ['A', 'AAAA', 'MX', 'TXT', 'NS', 'CNAME', 'SOA'];
+        if (!allowedTypes.includes(type)) {
+            return `[DNS LOOKUP ERROR]: Invalid record type: ${type}`;
+        }
+        if (!/^[a-zA-Z0-9.\-_\[\]:]+$/.test(host)) {
+            return `[DNS LOOKUP ERROR]: Invalid hostname: ${host}`;
+        }
+
+        // Try nslookup (cross-platform) using argument separation
+        let result = await shellArgs('nslookup', [`-type=${type}`, host]);
         if (result.includes('can\'t find') || result.includes('NXDOMAIN') || !result.trim()) {
-            const digResult = await shell(`dig ${type} ${host} +short`);
+            const digResult = await shellArgs('dig', [type, host, '+short']);
             result = digResult || result;
         }
 
@@ -74,8 +98,15 @@ export class PortScanTool implements Tool {
 
     async execute(args: { host: string; ports?: string; timeoutMs?: number }, requestConfirmation: (msg: string) => Promise<boolean>): Promise<string> {
         const host = args.host.trim();
-        const portsArg = args.ports || '21,22,23,25,53,80,110,143,443,445,3306,3389,5432,6379,8080,8443,27017';
+        const portsArg = (args.ports || '21,22,23,25,53,80,110,143,443,445,3306,3389,5432,6379,8080,8443,27017').trim();
         const timeout = args.timeoutMs ?? 500;
+
+        if (!/^[a-zA-Z0-9.\-_\[\]:]+$/.test(host)) {
+            return `[PORT SCAN ERROR]: Invalid host: ${host}`;
+        }
+        if (!/^[0-9,\- ]+$/.test(portsArg)) {
+            return `[PORT SCAN ERROR]: Invalid ports range/list: ${portsArg}`;
+        }
         const policyBlock = await enforceToolPolicy({
             toolName: this.name,
             riskLevel: 'local_scan',
@@ -85,8 +116,8 @@ export class PortScanTool implements Tool {
         }, requestConfirmation);
         if (policyBlock) return policyBlock;
 
-        // Try nmap first
-        const nmapResult = await shell(`nmap -p ${portsArg} --open -T4 ${host}`, 60_000);
+        // Try nmap first using argument separation
+        const nmapResult = await shellArgs('nmap', ['-p', portsArg, '--open', '-T4', host], 60_000);
         if (nmapResult && !nmapResult.toLowerCase().includes('not found') && !nmapResult.toLowerCase().includes('command not recognized')) {
             return `[PORT SCAN via nmap]:\n${nmapResult}`;
         }

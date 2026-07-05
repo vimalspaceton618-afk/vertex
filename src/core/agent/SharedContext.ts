@@ -30,24 +30,24 @@ type WorkflowRunRecord = {
 export class SharedContext {
     static getContextFile(): string {
         const baseRoot = process.env.VERTEX_WORKSPACE_ROOT?.trim() || process.cwd();
-        const candidate = path.join(baseRoot, '.vertex');
-        if (fs.existsSync(candidate)) {
-            try {
-                const st = fs.statSync(candidate);
-                if (st.isDirectory()) {
-                    return path.join(candidate, 'state.json');
-                }
-            } catch {
-                // fall through and return candidate
-            }
-        }
-        return candidate;
+        return path.join(baseRoot, '.vertex', 'state.json');
     }
 
     static init() {
         const contextFile = this.getContextFile();
+        const dir = path.dirname(contextFile);
+        if (fs.existsSync(dir)) {
+            try {
+                const stat = fs.statSync(dir);
+                if (!stat.isDirectory()) {
+                    fs.unlinkSync(dir);
+                }
+            } catch (e) {
+                // Ignore stat/unlink errors
+            }
+        }
         if (!fs.existsSync(contextFile)) {
-            fs.mkdirSync(path.dirname(contextFile), { recursive: true });
+            fs.mkdirSync(dir, { recursive: true });
             fs.writeFileSync(contextFile, JSON.stringify({}, null, 2));
         }
     }
