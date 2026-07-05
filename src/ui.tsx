@@ -3,6 +3,7 @@ import { Box, Text, useApp, useInput, Static } from 'ink';
 import path from 'path';
 import os from 'os';
 import { AgentManager } from './core/agent/AgentManager.js';
+import { NcbiFetchTool, UniProtFetchTool, PubChemSearchTool, PubMedSearchTool, ArxivSearchTool } from './tools/ScienceSkills.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
@@ -333,7 +334,7 @@ const App = () => {
 
     if (lowerQuery === '/' || lowerQuery === 'help' || lowerQuery === '/help') {
       setPromptValue('');
-      appendTurn(query, 'Arrektys Code Commands:\n/clear - Clear history\n/health - System status\n/scope - View policy\n/exit - Quit\n/sandbox <cmd> - Run isolated\n/safe-sandbox <cmd> - Safety research\n/audit [path] - Run security audit\n/nyx <prompt> - Offensive ops\n/search <query> - Web search\n/open <url> - Browse URL\n/gpu deploy <script> [--gpu <model>] [--provider <name>] - Deploy GPU job\n/gpu status [id] - Check GPU job status\n/gpu list [provider] - List available GPUs\n/gpu logs <id> - Stream GPU logs\n/gpu destroy <id> - Terminate GPU instance\n/gpu ssh <id> <command> - Remote execute on GPU');
+      appendTurn(query, 'Arrektys Code Commands:\n/clear - Clear history\n/health - System status\n/scope - View policy\n/exit - Quit\n/sandbox <cmd> - Run isolated\n/safe-sandbox <cmd> - Safety research\n/audit [path] - Run security audit\n/nyx <prompt> - Offensive ops\n/search <query> - Web search\n/open <url> - Browse URL\n/gpu deploy <script> [--gpu <model>] [--provider <name>] - Deploy GPU job\n/gpu status [id] - Check GPU job status\n/gpu list [provider] - List available GPUs\n/gpu logs <id> - Stream GPU logs\n/gpu destroy <id> - Terminate GPU instance\n/gpu ssh <id> <command> - Remote execute on GPU\n/goal <objective> - Run autonomously until achieved\n/schedule <seconds> <cmd> - Schedule a command\n/grill-me - Interactive requirement interview\n/learn - Extract and save learned rules\n/skill <name> <query> - Query database (ncbi, uniprot, pubchem, pubmed, arxiv)');
       return;
     }
 
@@ -406,6 +407,93 @@ const App = () => {
         return;
       }
       runImmediateTask(query, () => new BrowserAgent().screenshotUrl(url, filePath));
+      return;
+    }
+
+    if (lowerQuery.startsWith('/goal ')) {
+      const goal = query.slice('/goal '.length).trim();
+      if (!goal) {
+        setPromptValue('');
+        appendTurn(query, 'Usage: /goal <objective>');
+        return;
+      }
+      runDelegatedStream(query, `Run autonomously and completely finish this objective: ${goal}`);
+      return;
+    }
+
+    if (lowerQuery.startsWith('/schedule ')) {
+      const scheduleArgs = query.slice('/schedule '.length).trim();
+      const parts = scheduleArgs.match(/^(\d+)\s+(.+)$/);
+      if (!parts) {
+        setPromptValue('');
+        appendTurn(query, 'Usage: /schedule <seconds> <command>\nExample: /schedule 30 /health');
+        return;
+      }
+      const timeArg = parts[1];
+      const cmdToRun = parts[2];
+      const seconds = parseInt(timeArg);
+
+      setPromptValue('');
+      if (isNaN(seconds) || seconds <= 0) {
+        appendTurn(query, '[SCHEDULE ERROR]: Only integer seconds are supported.');
+        return;
+      }
+
+      appendTurn(query, `Scheduled job: executing "${cmdToRun}" every ${seconds} seconds.`);
+      const intervalId = setInterval(() => {
+        handlePrompt(cmdToRun);
+      }, seconds * 1000);
+
+      (global as any).vertexTimers = (global as any).vertexTimers || [];
+      (global as any).vertexTimers.push({ id: intervalId, cmd: cmdToRun, sec: seconds });
+      return;
+    }
+
+    if (lowerQuery === '/grill-me') {
+      runDelegatedStream(query, 'Start an interactive interview with me to align on our plan. Ask me up to 3 clarifying questions one-by-one to probe for requirements, constraints, and architecture.');
+      return;
+    }
+
+    if (lowerQuery === '/learn') {
+      runDelegatedStream(query, 'Analyze the conversation history. Extract any lessons, rules, guidelines, or reusable patterns we established, and save them in markdown format to ~/.vertex/learned_rules.md.');
+      return;
+    }
+
+    if (lowerQuery.startsWith('/skill ')) {
+      const skillArgs = query.slice('/skill '.length).trim();
+      const skillParts = skillArgs.split(/\s+/);
+      const skillName = skillParts[0]?.toLowerCase();
+      const skillParam = skillParts.slice(1).join(' ');
+
+      if (!skillName || !skillParam) {
+        setPromptValue('');
+        appendTurn(query, 'Usage: /skill <ncbi|uniprot|pubchem|pubmed|arxiv> <query>');
+        return;
+      }
+
+      if (skillName === 'ncbi') {
+        runImmediateTask(query, () => new NcbiFetchTool().execute({ id: skillParam }));
+        return;
+      }
+      if (skillName === 'uniprot') {
+        runImmediateTask(query, () => new UniProtFetchTool().execute({ accession: skillParam }));
+        return;
+      }
+      if (skillName === 'pubchem') {
+        runImmediateTask(query, () => new PubChemSearchTool().execute({ name: skillParam }));
+        return;
+      }
+      if (skillName === 'pubmed') {
+        runImmediateTask(query, () => new PubMedSearchTool().execute({ query: skillParam }));
+        return;
+      }
+      if (skillName === 'arxiv') {
+        runImmediateTask(query, () => new ArxivSearchTool().execute({ query: skillParam }));
+        return;
+      }
+
+      setPromptValue('');
+      appendTurn(query, `Unknown skill: ${skillName}. Choose from: ncbi, uniprot, pubchem, pubmed, arxiv.`);
       return;
     }
 
