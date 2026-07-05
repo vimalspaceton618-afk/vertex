@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, Static } from 'ink';
+import path from 'path';
+import os from 'os';
 import { AgentManager } from './core/agent/AgentManager.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
@@ -230,6 +232,60 @@ const App = () => {
   };
 
   const handlePrompt = (query: string) => {
+    const trimmedQuery = query.trim();
+    const isShellEscape = trimmedQuery.startsWith('!') || trimmedQuery.startsWith('$');
+    const rawCmd = isShellEscape ? trimmedQuery.slice(1).trim() : trimmedQuery;
+    const cmdTokens = rawCmd.split(/\s+/);
+    const primaryCmd = cmdTokens[0]?.toLowerCase();
+
+    const standardBinaries = [
+      'ls', 'pwd', 'git', 'cat', 'grep', 'mkdir', 'rm', 'cd',
+      'ping', 'ipconfig', 'ifconfig', 'whoami', 'netstat', 'uname', 'dir'
+    ];
+    const isDirectCmd = isShellEscape || standardBinaries.includes(primaryCmd);
+
+    if (isDirectCmd) {
+      setPromptValue('');
+      if (primaryCmd === 'clear') {
+        setHistory([]);
+        orchestrator.clearHistory();
+        process.stdout.write('\x1Bc');
+        return;
+      }
+      if (primaryCmd === 'cd') {
+        const targetDir = cmdTokens.slice(1).join(' ').trim() || os.homedir();
+        runImmediateTask(query, async () => {
+          try {
+            const resolved = path.resolve(process.cwd(), targetDir);
+            process.chdir(resolved);
+            process.env.VERTEX_WORKSPACE_ROOT = resolved;
+            return `Changed directory to: ${resolved}`;
+          } catch (e: any) {
+            return `[CD ERROR]: ${e.message}`;
+          }
+        });
+        return;
+      }
+      runImmediateTask(query, async () => {
+        const { exec: execCb } = await import('child_process');
+        const { promisify: prom } = await import('util');
+        const execP = prom(execCb);
+        try {
+          const { stdout, stderr } = await execP(rawCmd, {
+            cwd: process.cwd(),
+            timeout: 30000,
+            maxBuffer: 1024 * 1024
+          });
+          const out = stdout.trim();
+          const err = stderr.trim();
+          return out + (err ? `\nSTDERR: ${err}` : '') || 'Command completed successfully.';
+        } catch (e: any) {
+          return `[SHELL ERROR]: ${e.message}\n${e.stderr || ''}`;
+        }
+      });
+      return;
+    }
+
     const lowerQuery = query.toLowerCase();
 
     if (lowerQuery === '?' || lowerQuery === '/?') {
