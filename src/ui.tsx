@@ -333,7 +333,7 @@ const App = () => {
 
     if (lowerQuery === '/' || lowerQuery === 'help' || lowerQuery === '/help') {
       setPromptValue('');
-      appendTurn(query, 'Arrektys Code Commands:\n/clear - Clear history\n/health - System status\n/scope - View policy\n/exit - Quit\n/sandbox <cmd> - Run isolated\n/safe-sandbox <cmd> - Safety research\n/audit [path] - Run security audit\n/nyx <prompt> - Offensive ops\n/search <query> - Web search\n/open <url> - Browse URL');
+      appendTurn(query, 'Arrektys Code Commands:\n/clear - Clear history\n/health - System status\n/scope - View policy\n/exit - Quit\n/sandbox <cmd> - Run isolated\n/safe-sandbox <cmd> - Safety research\n/audit [path] - Run security audit\n/nyx <prompt> - Offensive ops\n/search <query> - Web search\n/open <url> - Browse URL\n/gpu deploy <script> [--gpu <model>] [--provider <name>] - Deploy GPU job\n/gpu status [id] - Check GPU job status\n/gpu list [provider] - List available GPUs\n/gpu logs <id> - Stream GPU logs\n/gpu destroy <id> - Terminate GPU instance\n/gpu ssh <id> <command> - Remote execute on GPU');
       return;
     }
 
@@ -406,6 +406,74 @@ const App = () => {
         return;
       }
       runImmediateTask(query, () => new BrowserAgent().screenshotUrl(url, filePath));
+      return;
+    }
+
+    if (lowerQuery.startsWith('/gpu')) {
+      const gpuArgs = query.slice(4).trim();
+      const gpuParts = gpuArgs.split(/\s+/);
+      const subCmd = (gpuParts[0] || 'help').toLowerCase();
+
+      if (subCmd === 'help' || !subCmd) {
+        setPromptValue('');
+        appendTurn(query, 'GPU Commands:\n/gpu deploy <script> [--gpu <model>] [--provider <name>] [--image <img>]\n/gpu status [instanceId]\n/gpu list [provider]\n/gpu logs <instanceId>\n/gpu destroy <instanceId>\n/gpu ssh <instanceId> <command>');
+        return;
+      }
+
+      if (subCmd === 'deploy') {
+        const scriptParts = gpuParts.slice(1);
+        let gpu = 'a100', provider = 'auto', image = 'pytorch/pytorch:latest', script = '';
+        const scriptTokens: string[] = [];
+        for (let i = 0; i < scriptParts.length; i++) {
+          if (scriptParts[i] === '--gpu' && scriptParts[i+1]) { gpu = scriptParts[++i]; }
+          else if (scriptParts[i] === '--provider' && scriptParts[i+1]) { provider = scriptParts[++i]; }
+          else if (scriptParts[i] === '--image' && scriptParts[i+1]) { image = scriptParts[++i]; }
+          else { scriptTokens.push(scriptParts[i]); }
+        }
+        script = scriptTokens.join(' ');
+        if (!script) { setPromptValue(''); appendTurn(query, 'Usage: /gpu deploy <script> [--gpu a100] [--provider runpod]'); return; }
+        runDelegatedStream(query, `Deploy a GPU job on provider "${provider}" with GPU "${gpu}" using image "${image}". Script to run: ${script}`);
+        return;
+      }
+
+      if (subCmd === 'status') {
+        const instanceId = gpuParts[1] || '';
+        runDelegatedStream(query, instanceId
+          ? `Check the status of GPU instance ${instanceId}`
+          : 'List all active GPU jobs and their current status');
+        return;
+      }
+
+      if (subCmd === 'list') {
+        const providerName = gpuParts[1] || 'auto';
+        runDelegatedStream(query, `List available GPU types and pricing from provider: ${providerName}`);
+        return;
+      }
+
+      if (subCmd === 'logs') {
+        const instanceId = gpuParts[1];
+        if (!instanceId) { setPromptValue(''); appendTurn(query, 'Usage: /gpu logs <instanceId>'); return; }
+        runDelegatedStream(query, `Stream logs from GPU instance ${instanceId}`);
+        return;
+      }
+
+      if (subCmd === 'destroy') {
+        const instanceId = gpuParts[1];
+        if (!instanceId) { setPromptValue(''); appendTurn(query, 'Usage: /gpu destroy <instanceId>'); return; }
+        runDelegatedStream(query, `Terminate and destroy GPU instance ${instanceId}`);
+        return;
+      }
+
+      if (subCmd === 'ssh') {
+        const instanceId = gpuParts[1];
+        const remoteCmd = gpuParts.slice(2).join(' ');
+        if (!instanceId || !remoteCmd) { setPromptValue(''); appendTurn(query, 'Usage: /gpu ssh <instanceId> <command>'); return; }
+        runDelegatedStream(query, `Execute command on GPU instance ${instanceId} via SSH: ${remoteCmd}`);
+        return;
+      }
+
+      // Unknown subcommand — delegate to orchestrator
+      runDelegatedStream(query, `GPU operation: ${gpuArgs}`);
       return;
     }
 
