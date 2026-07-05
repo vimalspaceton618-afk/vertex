@@ -21,7 +21,8 @@ program
   .version('3.0.0')
   .option('--run <prompt>', 'Run in headless mode with a prompt')
   .option('--json', 'Output as JSON in headless mode')
-  .option('--yes', 'Auto-approve tool confirmations in headless mode');
+  .option('--yes', 'Auto-approve tool confirmations in headless mode')
+  .option('--daemon', 'Start the background daemon server');
 
 program.parse(process.argv);
 const options = program.opts();
@@ -203,7 +204,14 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
   }
 }
 
-if (options.run) {
+if (options.daemon) {
+  import('./core/daemon.js').then(({ startDaemon }) => {
+    startDaemon();
+  }).catch((error) => {
+    process.stderr.write(`[DAEMON START ERROR]: ${error.message}\n`);
+    process.exitCode = 1;
+  });
+} else if (options.run) {
   runHeadless(options.run, Boolean(options.json), Boolean(options.yes)).catch((error) => {
     process.stderr.write(`[HEADLESS ERROR]: ${error.message}\n`);
     process.exitCode = 1;

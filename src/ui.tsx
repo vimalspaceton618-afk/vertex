@@ -198,12 +198,49 @@ const App = () => {
 
     let fullText = '';
     try {
-      const stream = orchestrator.delegateTask(routedPrompt, makeConfirm());
-      for await (const chunk of stream) {
-        fullText += chunk;
-        updateLastAssistant(fullText);
+      let useDaemon = false;
+      try {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), 600);
+        const statusCheck = await fetch('http://127.0.0.1:8899/status', { signal: controller.signal });
+        clearTimeout(id);
+        if (statusCheck.ok) {
+          const json = await statusCheck.json();
+          if (json && json.status === 'running') {
+            useDaemon = true;
+          }
+        }
+      } catch {
+        // Silent fallback
       }
-      orchestrator.recordTurn(query, fullText);
+
+      if (useDaemon) {
+        const response = await fetch('http://127.0.0.1:8899/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: routedPrompt, autoApprove: false })
+        });
+        if (!response.ok) {
+          throw new Error(`Daemon execution failed with status ${response.status}`);
+        }
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error('Daemon stream returned empty body.');
+        const decoder = new TextDecoder();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          fullText += chunk;
+          updateLastAssistant(fullText);
+        }
+      } else {
+        const stream = orchestrator.delegateTask(routedPrompt, makeConfirm());
+        for await (const chunk of stream) {
+          fullText += chunk;
+          updateLastAssistant(fullText);
+        }
+        orchestrator.recordTurn(query, fullText);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       fullText = `[VERTEX ERROR] ${message}`;
