@@ -51,7 +51,13 @@ const COMMANDS = [
   { name: '/audit', desc: 'Run security audit on path' },
   { name: '/nyx', desc: 'Offensive operations with NyxAgent' },
   { name: '/search', desc: 'Search the web using DuckDuckGo' },
-  { name: '/open', desc: 'Browse target URL' }
+  { name: '/open', desc: 'Browse target URL' },
+  { name: '/goal', desc: 'Run autonomously until goal is achieved' },
+  { name: '/schedule', desc: 'Schedule a recurring command execution' },
+  { name: '/grill-me', desc: 'Interactive requirements interview' },
+  { name: '/learn', desc: 'Extract and save learned rules' },
+  { name: '/skill', desc: 'Query databases (ncbi, uniprot, pubchem, pubmed, arxiv)' },
+  { name: '/gpu', desc: 'Provision, status, logs, ssh, or destroy GPU jobs' }
 ];
 
 function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex }: { input: string, cursor: number, isStreaming: boolean, selectedSuggestionIndex: number }) {
