@@ -30,6 +30,18 @@ VERTEX is not a generic chatbot. It is a purpose-built **cybersecurity operation
 
 ---
 
+## Interface Preview
+
+<div align="center">
+
+![VERTEX Terminal Interface](docs/screenshot.png)
+
+*Interactive ink-based reactive TTY shell featuring real-time AI Agent orchestration, live status indicators, auto-complete slash commands, and embedded security tooling.*
+
+</div>
+
+---
+
 ## Core Features
 
 ### 🛡️ Cybersecurity Sandbox
