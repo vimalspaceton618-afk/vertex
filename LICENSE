@@ -1,13 +1,25 @@
-Copyright (c) 2026 SpaceTon. All Rights Reserved.
+Proprietary License — VERTEX
 
-STRICTLY PROPRIETARY AND CONFIDENTIAL
+Copyright (c) 2026 SpaceTon
+All rights reserved.
 
-1. Ownership: This software, specifically the "CORTEX System", and all associated source code, documentation, UI designs (including the React Ink Terminal ASCII interfaces), structural architectures, and binary executables, are the sole and exclusive property of the creator/author.
+This software and associated documentation files (the "Software") are the exclusive property of SpaceTon and are proprietary.
 
-2. No Copying Allowed: You are strictly prohibited from copying, distributing, modifying, sublicensing, decompiling, reverse-engineering, or creating derivative works from any part of this software.
+Unless explicitly agreed to in a separate, written license agreement signed by an authorized representative of SpaceTon, no license, right, or permission, express or implied, is granted to any person or entity to use, copy, modify, distribute, sublicense, publicly display, perform, or create derivative works of the Software.
 
-3. Complete Prohibition of Use: No individual, corporation, organization, entity, or third party is granted any license to use, host, deploy, or interact with this codebase without explicit, signed, written consent from the author. 
+Permitted use
 
-4. All Violations Enforced: Any reproduction or deployment of the CORTEX platform outside of the author's primary systems constitutes theft of intellectual property and is subject to immediate legal action.
+- You may clone this repository and review the source code for the purpose of evaluation and contribution by making pull requests as described in CONTRIBUTING.md. Any copying, redistribution, or commercial use of the Software requires a separate written license from SpaceTon.
 
-DO NOT COPY. DO NOT DISTRIBUTE. DO NOT USE.
+Restrictions
+
+- You may not publish, distribute, sell, rent, lease, sublicense, or otherwise transfer the Software, in whole or in part, without prior written permission from SpaceTon.
+- You may not remove or alter any copyright, trademark, or other proprietary notices contained in the Software.
+
+Disclaimer
+
+THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. TO THE MAXIMUM EXTENT PERMITTED BY LAW, SPACETON DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL SPACETON BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES ARISING IN ANY WAY OUT OF THE USE OF THE SOFTWARE.
+
+Contact
+
+For licensing inquiries, please open an issue labeled "licensing" in the repository or contact the maintainers through the GitHub repository page.
