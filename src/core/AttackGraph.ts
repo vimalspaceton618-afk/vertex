@@ -1,3 +1,7 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
+
 export type AttackPhase =
     | 'recon'
     | 'weaponization'
@@ -55,12 +59,20 @@ const PHASE_ORDER: AttackPhase[] = [
     'collection', 'exfiltration', 'command_and_control', 'impact'
 ];
 
+const CONFIDENCE_WEIGHTS: Record<AttackEdge['confidence'], number> = {
+    confirmed: 1,
+    likely: 2,
+    possible: 5,
+    theoretical: 10
+};
+
 function genEdgeId(): string {
     return 'e_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
 export class AttackGraph {
     private state: AttackGraphState;
+    private storagePath: string;
 
     constructor() {
         this.state = {
@@ -70,28 +82,85 @@ export class AttackGraph {
             objectives: [],
             killChainProgress: new Map(PHASE_ORDER.map(p => [p, 'not_started']))
         };
+        const opsDir = path.join(os.homedir(), '.vertex', 'ops');
+        if (!fs.existsSync(opsDir)) {
+            fs.mkdirSync(opsDir, { recursive: true, mode: 0o700 });
+        }
+        this.storagePath = path.join(opsDir, 'attack_graph.json');
+        this.restore();
+    }
+
+    private autoSave(): void {
+        try {
+            const serializableNodes = Array.from(this.state.nodes.entries());
+            const serializableProgress = Array.from(this.state.killChainProgress.entries());
+            const payload = JSON.stringify({
+                nodes: serializableNodes,
+                edges: this.state.edges,
+                currentPhase: this.state.currentPhase,
+                objectives: this.state.objectives,
+                killChainProgress: serializableProgress
+            }, null, 2);
+            fs.writeFileSync(this.storagePath, payload, { mode: 0o600 });
+        } catch {
+            // Non-blocking disk save
+        }
+    }
+
+    restore(): boolean {
+        try {
+            if (!fs.existsSync(this.storagePath)) return false;
+            const data = JSON.parse(fs.readFileSync(this.storagePath, 'utf-8'));
+            this.state.nodes = new Map(data.nodes || []);
+            this.state.edges = data.edges || [];
+            this.state.currentPhase = data.currentPhase || 'recon';
+            this.state.objectives = data.objectives || [];
+            this.state.killChainProgress = new Map(data.killChainProgress || PHASE_ORDER.map(p => [p, 'not_started']));
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    merge(otherGraphData: { nodes: AttackNode[]; edges: AttackEdge[]; phase?: AttackPhase }): void {
+        for (const node of otherGraphData.nodes) {
+            this.addNode(node);
+        }
+        for (const edge of otherGraphData.edges) {
+            if (!this.state.edges.some(e => e.id === edge.id || (e.from === edge.from && e.to === edge.to && e.method === edge.method))) {
+                this.state.edges.push(edge);
+            }
+        }
+        if (otherGraphData.phase) {
+            this.setPhase(otherGraphData.phase);
+        }
+        this.autoSave();
     }
 
     addNode(node: AttackNode): void {
         this.state.nodes.set(node.id, node);
+        this.autoSave();
     }
 
     updateNode(id: string, updates: Partial<AttackNode>): boolean {
         const node = this.state.nodes.get(id);
         if (!node) return false;
         Object.assign(node, updates);
+        this.autoSave();
         return true;
     }
 
     addEdge(edge: Omit<AttackEdge, 'id'>): string {
         const id = genEdgeId();
         this.state.edges.push({ ...edge, id });
+        this.autoSave();
         return id;
     }
 
     setPhase(phase: AttackPhase): void {
         this.state.currentPhase = phase;
         this.state.killChainProgress.set(phase, 'in_progress');
+        this.autoSave();
     }
 
     completePhase(phase: AttackPhase): void {
@@ -100,14 +169,20 @@ export class AttackGraph {
         if (idx < PHASE_ORDER.length - 1) {
             this.state.currentPhase = PHASE_ORDER[idx + 1];
         }
+        this.autoSave();
     }
 
     setObjectives(objectives: string[]): void {
         this.state.objectives = objectives;
+        this.autoSave();
     }
 
     getNode(id: string): AttackNode | undefined {
         return this.state.nodes.get(id);
+    }
+
+    getAllNodes(): AttackNode[] {
+        return Array.from(this.state.nodes.values());
     }
 
     getNodesByStatus(status: NodeStatus): AttackNode[] {
@@ -141,13 +216,65 @@ export class AttackGraph {
         return null;
     }
 
+    findShortestOptimalPath(fromId: string, toId: string): AttackEdge[] | null {
+        const distances = new Map<string, number>();
+        const previousEdge = new Map<string, AttackEdge>();
+        const previousNode = new Map<string, string>();
+        const unvisited = new Set<string>(this.state.nodes.keys());
+
+        for (const nodeId of unvisited) {
+            distances.set(nodeId, Infinity);
+        }
+        distances.set(fromId, 0);
+
+        while (unvisited.size > 0) {
+            let current: string | null = null;
+            let lowestDist = Infinity;
+            for (const nodeId of unvisited) {
+                const d = distances.get(nodeId) ?? Infinity;
+                if (d < lowestDist) {
+                    lowestDist = d;
+                    current = nodeId;
+                }
+            }
+
+            if (!current || lowestDist === Infinity) break;
+            if (current === toId) break;
+
+            unvisited.delete(current);
+
+            for (const edge of this.getEdgesFrom(current)) {
+                if (!unvisited.has(edge.to) || !edge.established) continue;
+                const weight = CONFIDENCE_WEIGHTS[edge.confidence] || 5;
+                const alt = distances.get(current)! + weight;
+                if (alt < (distances.get(edge.to) ?? Infinity)) {
+                    distances.set(edge.to, alt);
+                    previousEdge.set(edge.to, edge);
+                    previousNode.set(edge.to, current);
+                }
+            }
+        }
+
+        if (!previousEdge.has(toId)) return null;
+
+        const path: AttackEdge[] = [];
+        let curr = toId;
+        while (curr !== fromId) {
+            const edge = previousEdge.get(curr);
+            if (!edge) break;
+            path.unshift(edge);
+            curr = previousNode.get(curr)!;
+        }
+
+        return path;
+    }
+
     suggestPivot(): string[] {
         const suggestions: string[] = [];
         const ownedNodes = this.getNodesByStatus('owned');
         const vulnerableNodes = this.getNodesByStatus('vulnerable');
         const scannedNodes = this.getNodesByStatus('scanned');
 
-        // Suggest paths from owned to vulnerable
         for (const owned of ownedNodes) {
             for (const vuln of vulnerableNodes) {
                 const edges = this.state.edges.filter(e => e.from === owned.id && e.to === vuln.id);
@@ -157,7 +284,6 @@ export class AttackGraph {
             }
         }
 
-        // Suggest unexplored paths from owned nodes
         for (const owned of ownedNodes) {
             for (const scanned of scannedNodes) {
                 const existingEdge = this.state.edges.find(e => e.from === owned.id && e.to === scanned.id);
@@ -264,3 +390,4 @@ export function getAttackGraph(): AttackGraph {
     if (!instance) instance = new AttackGraph();
     return instance;
 }
+

@@ -160,6 +160,59 @@ class ListPluginsTool implements Tool {
     }
 }
 
+import { getKillChainOrchestrator } from '../KillChainOrchestrator.js';
+
+class EngageTaskTool implements Tool {
+    name = "engage_target";
+    description = "Launch an autonomous multi-phase kill-chain engagement against a specified target using the KillChainOrchestrator.";
+    schema = {
+        type: "object",
+        properties: {
+            target: {
+                type: "string",
+                description: "Target IP, domain, or range for the autonomous kill-chain engagement."
+            }
+        },
+        required: ["target"]
+    };
+
+    async *execute(args: any, requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): AsyncGenerator<string, string, unknown> {
+        const target = args.target || 'localhost';
+        const orchestrator = getKillChainOrchestrator(this as any);
+        let log = orchestrator.startEngagement(target);
+        yield `\n${log}\n`;
+
+        const delegateTool = new DelegateTaskTool();
+        let step = orchestrator.getNextStep();
+        
+        while (step) {
+            if (signal?.aborted) break;
+            yield `\n[KILL-CHAIN AUTOMATION]: Initiating Phase '${step.phase.toUpperCase()}' via ${step.agent}...\n`;
+            
+            let resultSummary = '';
+            const stream = delegateTool.execute({
+                agentName: step.agent,
+                prompt: step.prompt,
+                goal: `Execute Phase ${step.phase} on target ${target}`,
+                doneDefinition: `Phase ${step.phase} output gathered`
+            }, requestConfirmation, signal);
+
+            for await (const chunk of stream) {
+                if (signal?.aborted) break;
+                yield chunk;
+                resultSummary += chunk;
+            }
+
+            const success = !resultSummary.includes('[ERROR]') && !resultSummary.includes('FAILED');
+            orchestrator.reportPhaseResult(step.phase, success, resultSummary.slice(0, 500));
+            step = orchestrator.getNextStep();
+        }
+
+        yield `\n\n${orchestrator.getStatusReport()}\n`;
+        return `Kill-chain engagement completed against ${target}.`;
+    }
+}
+
 export class AgentManager extends BaseAgent {
     constructor() {
         super(
@@ -172,9 +225,18 @@ export class AgentManager extends BaseAgent {
     protected setupTools(): void {
         this.registry.register(new DelegateTaskTool());
         this.registry.register(new ListPluginsTool());
+        this.registry.register(new EngageTaskTool());
     }
 
     public async *delegateTask(input: string, requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): AsyncGenerator<string> {
+        const engageRoute = input.match(/^\/engage\s+([^\s]+)/i) || input.match(/^\[ROUTE_DIRECT:engage\]\s*([^\s]+)?/i);
+        if (engageRoute) {
+            const target = engageRoute[1] || 'localhost';
+            const tool = new EngageTaskTool();
+            yield* tool.execute({ target }, requestConfirmation, signal);
+            return;
+        }
+
         const directRoute = input.match(/^\[ROUTE_DIRECT:([A-Za-z0-9_]+)\]\s*([\s\S]*)$/);
         if (directRoute) {
             const [, agentName, prompt] = directRoute;

@@ -1,7 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const MAX_AUDIT_LOG = 200;
+const MAX_AUDIT_LOG = 1000;
+
+export interface DiscoveryItem {
+    type: 'host' | 'port' | 'credential' | 'vulnerability' | 'finding';
+    summary: string;
+    details?: any;
+    timestamp: number;
+}
 
 type SessionContext = {
     rollingSummary?: string;
@@ -11,12 +18,14 @@ type SessionContext = {
     lastUserInput?: string;
     lastAssistantOutput?: string;
 };
+
 type WorkflowStepStatus = {
     stepId: string;
     status: 'planned' | 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
     updatedAt: string;
     note?: string;
 };
+
 type WorkflowRunRecord = {
     runId: string;
     workflowId: string;
@@ -28,6 +37,9 @@ type WorkflowRunRecord = {
 };
 
 export class SharedContext {
+    private static discoveryFeed: DiscoveryItem[] = [];
+    private static toolResultCache: Map<string, { result: string; timestamp: number }> = new Map();
+
     static getContextFile(): string {
         const baseRoot = process.env.VERTEX_WORKSPACE_ROOT?.trim() || process.cwd();
         return path.join(baseRoot, '.vertex', 'state.json');
@@ -107,6 +119,31 @@ export class SharedContext {
         this.set('auditLog', next);
     }
 
+    static addDiscovery(item: Omit<DiscoveryItem, 'timestamp'>): void {
+        const entry: DiscoveryItem = { ...item, timestamp: Date.now() };
+        SharedContext.discoveryFeed.push(entry);
+        if (SharedContext.discoveryFeed.length > 100) SharedContext.discoveryFeed.shift();
+        SharedContext.appendAudit({ event: 'discovery', type: item.type, summary: item.summary });
+    }
+
+    static getDiscoveryFeed(): DiscoveryItem[] {
+        return [...SharedContext.discoveryFeed];
+    }
+
+    static getCachedToolResult(cacheKey: string, maxAgeMs = 60000): string | null {
+        const cached = SharedContext.toolResultCache.get(cacheKey);
+        if (!cached) return null;
+        if (Date.now() - cached.timestamp > maxAgeMs) {
+            SharedContext.toolResultCache.delete(cacheKey);
+            return null;
+        }
+        return cached.result;
+    }
+
+    static setCachedToolResult(cacheKey: string, result: string): void {
+        SharedContext.toolResultCache.set(cacheKey, { result, timestamp: Date.now() });
+    }
+
     static buildMemoryBlock(): string {
         const session = (this.get('session') || {}) as SessionContext;
         const lines: string[] = [];
@@ -117,6 +154,9 @@ export class SharedContext {
         }
         if (session.touchedFiles?.length) {
             lines.push(`- touchedFiles: ${session.touchedFiles.slice(-8).join(' | ')}`);
+        }
+        if (SharedContext.discoveryFeed.length) {
+            lines.push(`- recentDiscoveries: ${SharedContext.discoveryFeed.slice(-5).map(d => `[${d.type.toUpperCase()}] ${d.summary}`).join(' | ')}`);
         }
         if (!lines.length) return '';
         return `\n\n[SESSION MEMORY]\n${lines.join('\n')}\n[/SESSION MEMORY]\n`;

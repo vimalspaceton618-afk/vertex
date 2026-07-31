@@ -140,8 +140,12 @@ export abstract class BaseAgent {
 
         let keepRunning = true;
         const startedAt = Date.now();
-        const maxIterations = Math.max(1, Math.min(Number(process.env.AUTO_LOOP_MAX_ITERATIONS || 8), 100));
-        const maxDurationMs = Math.max(1000, Math.min(Number(process.env.AUTO_LOOP_MAX_DURATION_MS || 120000), 30 * 60 * 1000));
+        const isAutonomous = process.env.AUTONOMOUS_MODE === 'true' || process.env.VERTEX_AUTONOMOUS === '1';
+        const defaultIterations = isAutonomous ? 50 : 25;
+        const defaultDurationMs = isAutonomous ? 30 * 60 * 1000 : 10 * 60 * 1000;
+
+        const maxIterations = Math.max(1, Math.min(Number(process.env.AUTO_LOOP_MAX_ITERATIONS || defaultIterations), 100));
+        const maxDurationMs = Math.max(1000, Math.min(Number(process.env.AUTO_LOOP_MAX_DURATION_MS || defaultDurationMs), 60 * 60 * 1000));
         let iteration = 0;
         
         while (keepRunning) {
@@ -172,7 +176,6 @@ export abstract class BaseAgent {
             while (!streamSuccess && retryAttempt < MAX_RETRIES) {
                 if (signal?.aborted) break;
                 try {
-                    // If there are no tools registered for this agent, don't pass 'tools' key to OpenAI
                     const toolsConfig = this.registry.getToolsSchema().length > 0 
                       ? { tools: this.registry.getToolsSchema() as any } 
                       : {};
@@ -197,7 +200,6 @@ export abstract class BaseAgent {
                         } catch (providerError: any) {
                             const formatted = formatProviderFailure(candidate, providerError);
                             providerErrors.push(formatted);
-                            // Do not yield fallback message if we are in a hidden retry loop to avoid spamming the console
                             if (retryAttempt === 0) yield `\n[${this.name} BRAIN FALLBACK]: ${formatted}`;
                         }
                     }
@@ -232,7 +234,7 @@ export abstract class BaseAgent {
                         }
                     }
 
-                    streamSuccess = true; // Fully consumed stream without throwing
+                    streamSuccess = true;
                 } catch (error: any) {
                     if (signal?.aborted) break;
                     const message = error.message || '';
@@ -243,7 +245,6 @@ export abstract class BaseAgent {
                         const backoffMs = Math.min(2000 * Math.pow(1.5, retryAttempt), 30000);
                         yield `\n[RATE LIMIT HIT]: Retrying in ${Math.round(backoffMs/1000)}s (Attempt ${retryAttempt}/${MAX_RETRIES})...\n`;
                         await new Promise(r => setTimeout(r, backoffMs));
-                        // Reset partial states for retry
                         currentResponse = "";
                         currentToolCalls = {};
                     } else {
@@ -251,7 +252,7 @@ export abstract class BaseAgent {
                         yield errorMessage;
                         this.history.push({ role: 'assistant', content: errorMessage });
                         keepRunning = false;
-                        break; // Break the retry loop
+                        break;
                     }
                 }
             }
@@ -268,8 +269,42 @@ export abstract class BaseAgent {
             if (toolCallsArray.length > 0) {
                 this.history.push({ role: 'assistant', content: currentResponse || null, tool_calls: toolCallsArray });
                 
-                for (const toolCall of toolCallsArray) {
-                    if (signal?.aborted) break;
+                if (toolCallsArray.length > 1) {
+                    yield `\n\n[${this.name} PARALLEL TOOLS]: Executing ${toolCallsArray.length} tools concurrently...`;
+                    
+                    const toolExecPromises = toolCallsArray.map(async (toolCall) => {
+                        const toolName = toolCall.function.name;
+                        const tool = this.registry.getTool(toolName);
+                        if (!tool) {
+                            return { id: toolCall.id, name: toolName, resultStr: `[ERROR]: Tool ${toolName} not found.` };
+                        }
+                        try {
+                            const args = JSON.parse(toolCall.function.arguments);
+                            const executionResult = await tool.execute(args, requestConfirmation, signal);
+                            let resultStr = '';
+                            if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
+                                for await (const chunk of executionResult as any) {
+                                    resultStr += chunk;
+                                }
+                            } else {
+                                resultStr = executionResult as string;
+                            }
+                            return { id: toolCall.id, name: toolName, resultStr };
+                        } catch (e: any) {
+                            return { id: toolCall.id, name: toolName, resultStr: `[TOOL PARSE OR EXECUTION ERROR]: ${e.message}` };
+                        }
+                    });
+
+                    const results = await Promise.allSettled(toolExecPromises);
+                    for (const res of results) {
+                        if (res.status === 'fulfilled') {
+                            const { id, name, resultStr } = res.value;
+                            this.history.push({ role: 'tool', tool_call_id: id, name, content: resultStr });
+                            yield `\n[${this.name} TOOL RESULT (${name})]: ${resultStr.substring(0, 100)}...\n`;
+                        }
+                    }
+                } else {
+                    const toolCall = toolCallsArray[0];
                     const toolName = toolCall.function.name;
                     const tool = this.registry.getTool(toolName);
                     
