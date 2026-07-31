@@ -192,6 +192,10 @@ export class BrowserAgent extends BaseAgent {
     }
 
     public async ensurePage(): Promise<Page> {
+        if (BrowserAgent.browser && !BrowserAgent.browser.isConnected()) {
+            BrowserAgent.browser = null;
+            BrowserAgent.page = null;
+        }
         if (!BrowserAgent.browser) {
             try {
                 const candidates = getBrowserCandidates();
@@ -217,7 +221,7 @@ export class BrowserAgent extends BaseAgent {
                 throw new Error(`Browser launch failed: ${error.message}\n${candidateNote}`);
             }
         }
-        if (!BrowserAgent.page) {
+        if (!BrowserAgent.page || BrowserAgent.page.isClosed()) {
             BrowserAgent.page = await BrowserAgent.browser.newPage();
             await BrowserAgent.page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36');
             await BrowserAgent.page.setViewport({ width: 1365, height: 900 });

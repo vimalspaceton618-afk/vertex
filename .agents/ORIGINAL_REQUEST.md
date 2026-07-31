@@ -25,3 +25,29 @@ Resolve all TypeScript type errors, syntax issues, and linting warnings across t
 - [ ] The CLI launches and executes core commands without crashing.
 - [ ] The UI renders consistently in the terminal.
 - [ ] A summary of fixed bugs and remaining issues (if any) is documented for the user.
+
+## Follow-up — 2026-07-26T13:58:08Z
+
+Automated system health audit, compilation verification, diagnostic testing, and issue remediation across all modules of the VERTEX workspace engine.
+
+Working directory: e:\vertex
+Integrity mode: demo
+
+## Requirements
+
+### R1. Workspace Build & Compilation Verification
+Ensure all TypeScript files in `src/` build cleanly with `npm run build` without any compilation errors, missing modules, or type mismatches.
+
+### R2. Tool Registry & Core System Integrity Audit
+Verify that all core agents (`CyberAgent`, `BrowserAgent`, `DevOpsAgent`), policy engines (`PolicyEngine.ts`), path security wrappers (`PathSecurity.ts`), and tool registries load and initialize cleanly.
+
+### R3. Automated Fixes & Verification
+Detect any runtime errors or broken contract imports across `src/tools/` and `src/plugins/`, apply precise fixes, and verify clean workspace compilation.
+
+## Acceptance Criteria
+
+### Workspace Diagnostics
+- [ ] `npm run build` completes with exit code 0 and zero TypeScript errors.
+- [ ] Tool registry resolves all registered tools (`Shell.ts`, `FileSystem.ts`, `OffensiveTools.ts`, `DockerSandbox.ts`).
+- [ ] Path containment rules (`PathSecurity.ts`) correctly enforce workspace root boundaries.
+- [ ] Output build artifacts in `dist/` are up to date.

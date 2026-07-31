@@ -93,7 +93,8 @@ export class SharedContext {
 
     static touchFile(filePath: string) {
         if (!filePath?.trim()) return;
-        const normalized = path.resolve(process.cwd(), filePath);
+        const baseRoot = process.env.VERTEX_WORKSPACE_ROOT?.trim() || process.cwd();
+        const normalized = path.resolve(baseRoot, filePath);
         const session = (this.get('session') || {}) as SessionContext;
         const prev = session.touchedFiles || [];
         const next = [...prev.filter((p) => p !== normalized), normalized].slice(-40);

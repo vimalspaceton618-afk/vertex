@@ -287,16 +287,7 @@ export class DockerSandboxTool implements Tool {
             return `[DOCKER SANDBOX OUTPUT]:\n${result}`;
         }
 
-        const allowFallback = (process.env.SANDBOX_ALLOW_HOST_FALLBACK || 'false').toLowerCase() === 'true';
-        if (!allowFallback) {
-            return '[SANDBOX BLOCKED]: Docker is unavailable and SANDBOX_ALLOW_HOST_FALLBACK is not true. Install/start Docker, then run: docker pull alpine:latest';
-        }
-
-        const approvedFallback = await requestConfirmation(
-            `[VERTEX SANDBOX FALLBACK] Docker is unavailable. Run on restricted host process instead?\n  > ${args.command}\nThis is not a real sandbox. Allow? (Y/n)`
-        );
-        if (!approvedFallback) return '[USER OVERRIDE]: Host fallback denied.';
-        return `[FALLBACK — Docker Unavailable]: Running in restricted host process.\n${await runRestricted(args.command, timeoutMs)}`;
+        return '[SANDBOX BLOCKED]: Docker is unavailable. Host fallback is disabled for security containment. Install/start Docker, then run: docker pull alpine:latest';
     }
 }
 

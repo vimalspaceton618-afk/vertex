@@ -135,7 +135,7 @@ export abstract class BaseAgent {
         }
     }
 
-    public async *run(input: string, requestConfirmation: (msg: string) => Promise<boolean>): AsyncGenerator<string> {
+    public async *run(input: string, requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): AsyncGenerator<string> {
         this.history.push({ role: 'user', content: input });
 
         let keepRunning = true;
@@ -145,6 +145,10 @@ export abstract class BaseAgent {
         let iteration = 0;
         
         while (keepRunning) {
+            if (signal?.aborted) {
+                yield `\n[INTERRUPTED BY ESC]`;
+                break;
+            }
             iteration += 1;
             const elapsed = Date.now() - startedAt;
             if (iteration > maxIterations) {
@@ -166,6 +170,7 @@ export abstract class BaseAgent {
             const MAX_RETRIES = 15;
 
             while (!streamSuccess && retryAttempt < MAX_RETRIES) {
+                if (signal?.aborted) break;
                 try {
                     // If there are no tools registered for this agent, don't pass 'tools' key to OpenAI
                     const toolsConfig = this.registry.getToolsSchema().length > 0 
@@ -177,6 +182,7 @@ export abstract class BaseAgent {
                     const providerErrors: string[] = [];
                     let activeProviderLabel = '';
                     for (const candidate of candidates) {
+                        if (signal?.aborted) break;
                         try {
                             const client = getClientFor(candidate.baseURL, candidate.apiKey);
                             activeProviderLabel = `${candidate.provider}:${candidate.model}`;
@@ -195,6 +201,7 @@ export abstract class BaseAgent {
                             if (retryAttempt === 0) yield `\n[${this.name} BRAIN FALLBACK]: ${formatted}`;
                         }
                     }
+                    if (signal?.aborted) break;
                     if (!stream) {
                         const guidance =
                             '\nTry: 1) set LOCAL_BASE_URL correctly, 2) run local server, 3) switch BRAIN_MODE to local/hybrid, 4) update cloud model/key/quota.';
@@ -204,6 +211,7 @@ export abstract class BaseAgent {
                     if (retryAttempt === 0) yield `\n[${this.name} BRAIN ROUTE]: ${activeProviderLabel}\n`;
 
                     for await (const chunk of stream) {
+                        if (signal?.aborted) break;
                         const delta = chunk.choices[0]?.delta;
                         
                         if (delta?.content) {
@@ -226,6 +234,7 @@ export abstract class BaseAgent {
 
                     streamSuccess = true; // Fully consumed stream without throwing
                 } catch (error: any) {
+                    if (signal?.aborted) break;
                     const message = error.message || '';
                     const isRateLimit = message.includes('429') || message.toLowerCase().includes('rate limit') || message.toLowerCase().includes('resourceexhausted');
                     
@@ -247,6 +256,11 @@ export abstract class BaseAgent {
                 }
             }
 
+            if (signal?.aborted) {
+                yield `\n[INTERRUPTED BY ESC]`;
+                break;
+            }
+
             if (!keepRunning) continue;
 
             const toolCallsArray = Object.values(currentToolCalls);
@@ -255,6 +269,7 @@ export abstract class BaseAgent {
                 this.history.push({ role: 'assistant', content: currentResponse || null, tool_calls: toolCallsArray });
                 
                 for (const toolCall of toolCallsArray) {
+                    if (signal?.aborted) break;
                     const toolName = toolCall.function.name;
                     const tool = this.registry.getTool(toolName);
                     
@@ -264,9 +279,10 @@ export abstract class BaseAgent {
                     if (tool) {
                         try {
                             const args = JSON.parse(toolCall.function.arguments);
-                            const executionResult = await tool.execute(args, requestConfirmation);
+                            const executionResult = await tool.execute(args, requestConfirmation, signal);
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
                                 for await (const chunk of executionResult as any) {
+                                    if (signal?.aborted) break;
                                     yield chunk;
                                     resultStr += chunk;
                                 }

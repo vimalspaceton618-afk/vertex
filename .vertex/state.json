@@ -1,8 +1,8 @@
 {
   "session": {
-    "lastUserInput": "/open",
-    "lastAssistantOutput": "\n[AgentManager BRAIN ROUTE]: cloud:nvidia/nemotron-3-ultra-550b-a55b\nI see you've sent `/open`, but I need a bit more context to help you. What would you like me to open?\n\nFor example:\n- A specific file or directory (provide the path)\n- A project or workspace\n- A network connection/port\n- A security audit session\n- A workflow or deployment\n\nLet me know what you're trying to access and I'll route it to the appropriate agent.",
-    "rollingSummary": "/open -> \n[AgentManager BRAIN ROUTE]: cloud:nvidia/nemotron-3-ultra-550b-a55b\nI see you've sent `/open`, but I need a bit more context to help you. What would you like me to open?\n\nFor example:\n- A specific file or directory (pro"
+    "lastUserInput": "/goal",
+    "lastAssistantOutput": "\n[AgentManager BRAIN ROUTE]: cloud:nvidia/nemotron-3-ultra-550b-a55b\nI see you've sent `/goal` but haven't specified what goal you'd like me to pursue. The session memory shows a previous `/open` command that was awaiting clarification.\n\n**What would you like me to help you accomplish?** For example:\n\n- **Explore/analyze** a codebase, repository, or directory\n- **Plan** a feature, refactor, or architecture change  \n- **Develop** new code, fix bugs, or implement features\n- **Test/verify** quality, run linting, or validate behavior\n- **Deploy/configure** infrastructure, CI/CD, or environments\n- **Security audit** - defensive (CyberAgent) or offensive (NyxAgent)\n- **Research/browse** documentation, APIs, or external resources\n- **Network analysis** - DNS, ports, traffic, connectivity\n\nPlease describe your objective and I'll route it to the appropriate specialized agent with full context.",
+    "rollingSummary": "/goal -> \n[AgentManager BRAIN ROUTE]: cloud:nvidia/nemotron-3-ultra-550b-a55b\nI see you've sent `/goal` but haven't specified what goal you'd like me to pursue. The session memory shows a previous `/open` command that was awaitin"
   },
   "auditLog": [
     {
@@ -79,6 +79,11 @@
       "ts": "2026-07-04T12:24:48.272Z",
       "event": "turn_completed",
       "userInputPreview": "/open"
+    },
+    {
+      "ts": "2026-07-05T05:59:12.155Z",
+      "event": "turn_completed",
+      "userInputPreview": "/goal"
     }
   ]
 }

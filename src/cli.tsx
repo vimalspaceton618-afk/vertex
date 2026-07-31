@@ -9,6 +9,20 @@ import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
+if (process.env.MOCK_TTY === '1' || process.env.MOCK_TTY === 'true') {
+  if (process.stdin) {
+    process.stdin.isTTY = true;
+    (process.stdin as any).setRawMode = () => {};
+  }
+  if (process.stdout) {
+    process.stdout.isTTY = true;
+    process.stdout.columns = 100;
+    process.stdout.rows = 30;
+    if ((process.stdout as any)._handle && typeof (process.stdout as any)._handle.setBlocking === 'function') {
+      (process.stdout as any)._handle.setBlocking(true);
+    }
+  }
+}
 
 ConfigManager.init();
 ensureScopeFile();
@@ -113,6 +127,53 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
       return;
     }
     routedPrompt = `[ROUTE_DIRECT:NyxAgent] ${nyxPrompt}`;
+  } else if (normalized.startsWith('/phantom ')) {
+    const phantomPrompt = prompt.trim().slice('/phantom '.length).trim();
+    if (!phantomPrompt) {
+      const output = 'Usage: /phantom <red team prompt>\nExample: /phantom run full kill-chain on 192.168.1.50';
+      if (asJson) {
+        process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${output}\n`);
+      }
+      return;
+    }
+    routedPrompt = `[ROUTE_DIRECT:PhantomAgent] ${phantomPrompt}`;
+  } else if (normalized.startsWith('/sentinel')) {
+    const sentinelPrompt = prompt.trim().slice('/sentinel'.length).trim() || 'run full defensive audit and timeline analysis';
+    routedPrompt = `[ROUTE_DIRECT:SentinelAgent] ${sentinelPrompt}`;
+  } else if (normalized.startsWith('/recon ')) {
+    const reconPrompt = prompt.trim().slice('/recon '.length).trim();
+    if (!reconPrompt) {
+      const output = 'Usage: /recon <target>\nExample: /recon scan target.com';
+      if (asJson) {
+        process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+      } else {
+        process.stdout.write(`${output}\n`);
+      }
+      return;
+    }
+    routedPrompt = `[ROUTE_DIRECT:ReconAgent] ${reconPrompt}`;
+  } else if (normalized.startsWith('/loot')) {
+    const { getLootStore } = await import('./core/LootStore.js');
+    const store = getLootStore();
+    const arg = prompt.trim().slice('/loot'.length).trim().toLowerCase();
+    let output = '';
+    if (arg === 'stats') output = store.getStats();
+    else if (arg === 'export') output = store.exportJson();
+    else if (arg === 'hashcat') output = store.exportHashcat() || 'No hashes in vault.';
+    else output = store.query({ target: arg || undefined });
+
+    if (asJson) process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+    else process.stdout.write(`${output}\n`);
+    return;
+  } else if (normalized.startsWith('/attack-graph')) {
+    const { getAttackGraph } = await import('./core/AttackGraph.js');
+    const graph = getAttackGraph();
+    const output = graph.planNextPhase();
+    if (asJson) process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
+    else process.stdout.write(`${output}\n`);
+    return;
   } else if (normalized.startsWith('/search ')) {
     const searchQuery = prompt.trim().slice('/search '.length).trim();
     if (!searchQuery) {

@@ -11,9 +11,13 @@ export type RiskLevel =
     | 'exploit'
     | 'credential_attack'
     | 'c2'
-    | 'destructive';
+    | 'destructive'
+    | 'unrestricted';
+
+export type ScopeMode = 'standard' | 'unrestricted_lab';
 
 export type ScopeConfig = {
+    mode: ScopeMode;
     localOnly: boolean;
     allowedDomains: string[];
     allowedCidrs: string[];
@@ -29,6 +33,7 @@ export type PolicyDecision = {
 };
 
 const DEFAULT_SCOPE: ScopeConfig = {
+    mode: 'standard',
     localOnly: true,
     allowedDomains: [],
     allowedCidrs: [
@@ -41,6 +46,11 @@ const DEFAULT_SCOPE: ScopeConfig = {
     blockedTargets: [],
     allowedOffensiveTools: ['nmap_scan', 'port_scan', 'sandbox_execute']
 };
+
+export function isUnrestrictedLab(scope?: ScopeConfig): boolean {
+    const s = scope || loadScope();
+    return s.mode === 'unrestricted_lab';
+}
 
 function getScopePath(): string {
     const root = getWorkspaceRoot();
@@ -56,12 +66,31 @@ function getScopePath(): string {
 }
 
 function normalizeTarget(target: string): string {
-    return target.trim().replace(/^https?:\/\//i, '').split('/')[0].split(':')[0].toLowerCase();
+    try {
+        const decoded = decodeURIComponent(target.trim());
+        const cleaned = decoded.replace(/^https?:\/\//i, '').split('/')[0].split('?')[0].split('#')[0];
+        // Handle IPv6 brackets if present e.g. [::1]:8080
+        if (cleaned.startsWith('[')) {
+            const closing = cleaned.indexOf(']');
+            return closing !== -1 ? cleaned.slice(1, closing).toLowerCase() : cleaned.toLowerCase();
+        }
+        return cleaned.split(':')[0].toLowerCase();
+    } catch {
+        return target.trim().toLowerCase();
+    }
 }
 
 function parseIpv4(ip: string): number | null {
-    if (net.isIP(ip) !== 4) return null;
-    return ip.split('.').reduce((acc, part) => ((acc << 8) + Number(part)) >>> 0, 0);
+    const norm = ip.trim();
+    if (net.isIP(norm) === 4) {
+        return norm.split('.').reduce((acc, part) => ((acc << 8) + Number(part)) >>> 0, 0);
+    }
+    // Check for single integer/decimal IP format e.g. 2130706433
+    if (/^\d+$/.test(norm)) {
+        const num = Number(norm);
+        if (num >= 0 && num <= 0xffffffff) return num >>> 0;
+    }
+    return null;
 }
 
 function ipv4InCidr(ip: string, cidr: string): boolean {
@@ -76,7 +105,12 @@ function ipv4InCidr(ip: string, cidr: string): boolean {
 
 function isLocalhost(target: string): boolean {
     const normalized = normalizeTarget(target);
-    return normalized === 'localhost' || normalized === '::1' || normalized === '0.0.0.0' || normalized === '127.0.0.1';
+    if (normalized === 'localhost' || normalized === '::1' || normalized === '0.0.0.0' || normalized === '127.0.0.1') return true;
+    if (normalized.endsWith('.localhost') || normalized.endsWith('.nip.io')) return true;
+    if (normalized.startsWith('::ffff:127.')) return true;
+    const ipNum = parseIpv4(normalized);
+    if (ipNum !== null && (ipNum >>> 24) === 127) return true;
+    return false;
 }
 
 function isDomainAllowed(target: string, allowedDomains: string[]): boolean {
@@ -121,6 +155,7 @@ export function loadScope(): ScopeConfig {
     try {
         const parsed = JSON.parse(fs.readFileSync(scopePath, 'utf-8')) as Partial<ScopeConfig>;
         return {
+            mode: (parsed.mode === 'unrestricted_lab' ? 'unrestricted_lab' : 'standard') as ScopeMode,
             localOnly: parsed.localOnly ?? DEFAULT_SCOPE.localOnly,
             allowedDomains: Array.isArray(parsed.allowedDomains) ? parsed.allowedDomains : DEFAULT_SCOPE.allowedDomains,
             allowedCidrs: Array.isArray(parsed.allowedCidrs) ? parsed.allowedCidrs : DEFAULT_SCOPE.allowedCidrs,
@@ -137,6 +172,7 @@ export function describeScope(): string {
     const scope = loadScope();
     return [
         `Scope file: ${scopePath}`,
+        `Mode: ${scope.mode}`,
         `Local only: ${scope.localOnly ? 'yes' : 'no'}`,
         `Allowed domains: ${scope.allowedDomains.length ? scope.allowedDomains.join(', ') : '(none)'}`,
         `Allowed CIDRs: ${scope.allowedCidrs.join(', ')}`,
@@ -163,6 +199,15 @@ export function evaluateToolPolicy(options: {
     const scope = loadScope();
     const targets = (options.targets || []).map((target) => target.trim()).filter(Boolean);
 
+    // Unrestricted lab mode — allow everything, no confirmation gates
+    if (isUnrestrictedLab(scope)) {
+        return {
+            allowed: true,
+            requiresConfirmation: false,
+            reason: 'Allowed — unrestricted_lab mode active'
+        };
+    }
+
     for (const target of targets) {
         if (isTargetBlocked(target, scope.blockedTargets)) {
             return {
@@ -182,7 +227,7 @@ export function evaluateToolPolicy(options: {
         };
     }
 
-    const offensive = ['exploit', 'credential_attack', 'c2', 'destructive'].includes(options.riskLevel);
+    const offensive = ['exploit', 'credential_attack', 'c2', 'destructive', 'unrestricted'].includes(options.riskLevel);
     if (offensive && !scope.allowedOffensiveTools.includes(options.toolName)) {
         return {
             allowed: false,

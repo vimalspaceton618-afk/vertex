@@ -50,6 +50,11 @@ const COMMANDS = [
   { name: '/safe-sandbox', desc: 'Run safety research command in Docker' },
   { name: '/audit', desc: 'Run security audit on path' },
   { name: '/nyx', desc: 'Offensive operations with NyxAgent' },
+  { name: '/phantom', desc: 'Full-spectrum red team with PhantomAgent' },
+  { name: '/sentinel', desc: 'Blue team defense & forensics with SentinelAgent' },
+  { name: '/recon', desc: 'Reconnaissance with ReconAgent' },
+  { name: '/loot', desc: 'Query encrypted LootStore credential vault' },
+  { name: '/attack-graph', desc: 'View MITRE ATT&CK kill-chain graph & pivots' },
   { name: '/search', desc: 'Search the web using DuckDuckGo' },
   { name: '/open', desc: 'Browse target URL' },
   { name: '/goal', desc: 'Run autonomously until goal is achieved' },
@@ -60,7 +65,28 @@ const COMMANDS = [
   { name: '/gpu', desc: 'Provision, status, logs, ssh, or destroy GPU jobs' }
 ];
 
-function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex }: { input: string, cursor: number, isStreaming: boolean, selectedSuggestionIndex: number }) {
+function ActiveStreamView({ content, role }: { content: string; role: 'user' | 'assistant' }) {
+  const MAX_STREAM_LINES = 15;
+  const lines = content.split('\n');
+  const isTruncated = lines.length > MAX_STREAM_LINES;
+  const visibleLines = isTruncated ? lines.slice(-MAX_STREAM_LINES) : lines;
+  const displayContent = visibleLines.join('\n');
+
+  return (
+    <Box marginY={1} flexDirection="column">
+      {isTruncated && (
+        <Text color="gray" italic>
+          [... {lines.length - MAX_STREAM_LINES} lines active stream ... ]
+        </Text>
+      )}
+      <Text color={role === 'user' ? 'cyan' : 'white'} dimColor={role === 'assistant'}>
+        {role === 'user' ? '> ' : ''}{displayContent}
+      </Text>
+    </Box>
+  );
+}
+
+function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queuedQueries }: { input: string, cursor: number, isStreaming: boolean, selectedSuggestionIndex: number, queuedQueries: string[] }) {
   const beforeCursor = input.slice(0, cursor);
   const cursorChar = input[cursor] || ' ';
   const afterCursor = input.slice(cursor + 1);
@@ -74,7 +100,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex }: { in
     <Box flexDirection="column" width={97}>
       {/* Input Prompt Area */}
       <Box marginTop={1} paddingX={0}>
-        <Text bold>{'> '} </Text>
+        <Text bold color={isStreaming ? "yellow" : "white"}>{'> '} </Text>
         {input.length > 0 ? (
           <Box>
             <Text>
@@ -89,6 +115,20 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex }: { in
           </Box>
         )}
       </Box>
+
+      {/* Queued queries badge */}
+      {queuedQueries.length > 0 && (
+        <Box marginTop={0} flexDirection="column">
+          <Text color="yellow" bold>
+            [Queued in waiting ({queuedQueries.length})]:
+          </Text>
+          {queuedQueries.map((q, idx) => (
+            <Text key={`queued-${idx}-${q.slice(0, 10)}`} color="dim">
+              {"  "}{idx + 1}. {q}
+            </Text>
+          ))}
+        </Box>
+      )}
 
       {/* Bottom Divider */}
       <Box marginTop={0}>
@@ -115,16 +155,18 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex }: { in
             <Text color="red">No matching commands found.</Text>
           )
         ) : input.startsWith('?') ? (
-          <Text color="cyan">Shortcuts: ? (shortcuts) | / (commands) | Ctrl+C (exit) | Up/Down (history)</Text>
+          <Text color="cyan">Shortcuts: ? (shortcuts) | / (commands) | Ctrl+C (exit) | Esc (cancel/clear) | Up/Down (history)</Text>
+        ) : isStreaming ? (
+          <Text color="yellow">Agent is working... Press Esc to cancel task | Type next query and press Enter to queue</Text>
         ) : (
-          <Text color="gray">? for shortcuts</Text>
+          <Text color="gray">? for shortcuts | Esc to clear input</Text>
         )}
       </Box>
     </Box>
   );
 }
 
-const App = () => {
+  const App = () => {
   const { exit } = useApp();
   const [isTrusted, setIsTrusted] = useState(false);
   const [trustCursor, setTrustCursor] = useState(1);
@@ -134,6 +176,7 @@ const App = () => {
   const [historyCursor, setHistoryCursor] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [queuedQueries, setQueuedQueries] = useState<string[]>([]);
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
   const [autoApproveTools] = useState(false);
 
@@ -141,6 +184,7 @@ const App = () => {
 
   const orchestrator = useRef(new AgentManager()).current;
   const autoApproveToolsRef = useRef(false);
+  const currentAbortController = useRef<AbortController | null>(null);
 
   useEffect(() => {
     autoApproveToolsRef.current = autoApproveTools;
@@ -149,6 +193,24 @@ const App = () => {
   useEffect(() => {
     setSelectedSuggestionIndex(0);
   }, [input]);
+
+  useEffect(() => {
+    if (!isStreaming && queuedQueries.length > 0) {
+      const [nextQuery, ...remaining] = queuedQueries;
+      setQueuedQueries(remaining);
+      handlePrompt(nextQuery);
+    }
+  }, [isStreaming, queuedQueries]);
+
+  const cancelCurrentTask = () => {
+    if (currentAbortController.current) {
+      currentAbortController.current.abort();
+      currentAbortController.current = null;
+    }
+    setQueuedQueries([]);
+    setIsStreaming(false);
+    updateLastAssistant('[CANCELLED: Task interrupted by user via Esc]');
+  };
 
   const setPromptValue = (value: string, cursor = value.length) => {
     setInput(value);
@@ -184,6 +246,27 @@ const App = () => {
     });
   };
 
+  const lastUpdateMs = useRef(0);
+  const pendingUpdateTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const updateLastAssistantThrottled = (content: string, force = false) => {
+    const now = Date.now();
+    if (force || now - lastUpdateMs.current >= 45) {
+      if (pendingUpdateTimer.current) {
+        clearTimeout(pendingUpdateTimer.current);
+        pendingUpdateTimer.current = null;
+      }
+      lastUpdateMs.current = now;
+      updateLastAssistant(content);
+    } else if (!pendingUpdateTimer.current) {
+      pendingUpdateTimer.current = setTimeout(() => {
+        lastUpdateMs.current = Date.now();
+        pendingUpdateTimer.current = null;
+        updateLastAssistant(content);
+      }, 45 - (now - lastUpdateMs.current));
+    }
+  };
+
   const makeConfirm = () => (message: string) => {
     if (autoApproveToolsRef.current) {
       return Promise.resolve(true);
@@ -199,6 +282,8 @@ const App = () => {
   };
 
   const runDelegatedStream = async (query: string, routedPrompt = query) => {
+    const controller = new AbortController();
+    currentAbortController.current = controller;
     appendTurn(query);
     setPromptValue('');
     setIsStreaming(true);
@@ -207,10 +292,7 @@ const App = () => {
     try {
       let useDaemon = false;
       try {
-        const controller = new AbortController();
-        const id = setTimeout(() => controller.abort(), 600);
         const statusCheck = await fetch('http://127.0.0.1:8899/status', { signal: controller.signal });
-        clearTimeout(id);
         if (statusCheck.ok) {
           const json = await statusCheck.json();
           if (json && json.status === 'running') {
@@ -225,7 +307,8 @@ const App = () => {
         const response = await fetch('http://127.0.0.1:8899/run', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prompt: routedPrompt, autoApprove: false })
+          body: JSON.stringify({ prompt: routedPrompt, autoApprove: false }),
+          signal: controller.signal
         });
         if (!response.ok) {
           throw new Error(`Daemon execution failed with status ${response.status}`);
@@ -234,42 +317,64 @@ const App = () => {
         if (!reader) throw new Error('Daemon stream returned empty body.');
         const decoder = new TextDecoder();
         while (true) {
+          if (controller.signal.aborted) break;
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done || controller.signal.aborted) break;
           const chunk = decoder.decode(value, { stream: true });
           fullText += chunk;
-          updateLastAssistant(fullText);
+          updateLastAssistantThrottled(fullText);
         }
       } else {
-        const stream = orchestrator.delegateTask(routedPrompt, makeConfirm());
+        const stream = orchestrator.delegateTask(routedPrompt, makeConfirm(), controller.signal);
         for await (const chunk of stream) {
+          if (controller.signal.aborted) break;
           fullText += chunk;
-          updateLastAssistant(fullText);
+          updateLastAssistantThrottled(fullText);
         }
-        orchestrator.recordTurn(query, fullText);
+        if (!controller.signal.aborted) {
+          orchestrator.recordTurn(query, fullText);
+        }
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      fullText = `[VERTEX ERROR] ${message}`;
-      updateLastAssistant(fullText);
+    } catch (error: any) {
+      if (error.name === 'AbortError' || controller.signal.aborted) {
+        fullText += '\n[CANCELLED: Task interrupted by user via Esc]';
+        updateLastAssistantThrottled(fullText, true);
+      } else {
+        const message = error instanceof Error ? error.message : String(error);
+        fullText = `[VERTEX ERROR] ${message}`;
+        updateLastAssistantThrottled(fullText, true);
+      }
     } finally {
+      if (currentAbortController.current === controller) {
+        currentAbortController.current = null;
+      }
+      updateLastAssistantThrottled(fullText, true);
       setIsStreaming(false);
     }
   };
 
   const runImmediateTask = (query: string, task: () => Promise<string>) => {
+    const controller = new AbortController();
+    currentAbortController.current = controller;
     setPromptValue('');
     appendTurn(query);
     setIsStreaming(true);
     void (async () => {
       try {
         const result = await task();
-        updateLastAssistant(result);
-        orchestrator.recordTurn(query, result);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        updateLastAssistant(`[VERTEX ERROR] ${message}`);
+        if (!controller.signal.aborted) {
+          updateLastAssistant(result);
+          orchestrator.recordTurn(query, result);
+        }
+      } catch (error: any) {
+        if (!controller.signal.aborted) {
+          const message = error instanceof Error ? error.message : String(error);
+          updateLastAssistant(`[VERTEX ERROR] ${message}`);
+        }
       } finally {
+        if (currentAbortController.current === controller) {
+          currentAbortController.current = null;
+        }
         setIsStreaming(false);
       }
     })();
@@ -340,7 +445,7 @@ const App = () => {
 
     if (lowerQuery === '/' || lowerQuery === 'help' || lowerQuery === '/help') {
       setPromptValue('');
-      appendTurn(query, 'Arrektys Code Commands:\n/clear - Clear history\n/health - System status\n/scope - View policy\n/exit - Quit\n/sandbox <cmd> - Run isolated\n/safe-sandbox <cmd> - Safety research\n/audit [path] - Run security audit\n/nyx <prompt> - Offensive ops\n/search <query> - Web search\n/open <url> - Browse URL\n/gpu deploy <script> [--gpu <model>] [--provider <name>] - Deploy GPU job\n/gpu status [id] - Check GPU job status\n/gpu list [provider] - List available GPUs\n/gpu logs <id> - Stream GPU logs\n/gpu destroy <id> - Terminate GPU instance\n/gpu ssh <id> <command> - Remote execute on GPU\n/goal <objective> - Run autonomously until achieved\n/schedule <seconds> <cmd> - Schedule a command\n/grill-me - Interactive requirement interview\n/learn - Extract and save learned rules\n/skill <name> <query> - Query database (ncbi, uniprot, pubchem, pubmed, arxiv)');
+      appendTurn(query, 'VERTEX Terminal Commands:\n/clear - Clear history\n/health - System status\n/scope - View policy\n/exit - Quit\n/sandbox <cmd> - Run isolated Docker command\n/safe-sandbox <cmd> - Safety research\n/audit [path] - Security audit (CyberAgent)\n/nyx <prompt> - Offensive ops (NyxAgent)\n/phantom <prompt> - Red team kill-chain (PhantomAgent)\n/sentinel <prompt> - Blue team defense (SentinelAgent)\n/recon <prompt> - Reconnaissance (ReconAgent)\n/loot [query|stats|export] - Access LootStore vault\n/attack-graph - View kill-chain graph & pivots\n/search <query> - Web search\n/open <url> - Browse URL\n/goal <objective> - Autonomous execution loop\n/schedule <seconds> <cmd> - Schedule recurring task\n/skill <name> <query> - Science skills');
       return;
     }
 
@@ -367,6 +472,54 @@ const App = () => {
     if (lowerQuery === '/scope' || lowerQuery === '/scope show') {
       setPromptValue('');
       appendTurn(query, describeScope());
+      return;
+    }
+
+    if (lowerQuery.startsWith('/phantom ')) {
+      const p = query.slice('/phantom '.length).trim();
+      if (!p) {
+        setPromptValue('');
+        appendTurn(query, 'Usage: /phantom <red team prompt>\nExample: /phantom run full kill-chain on 192.168.1.50');
+        return;
+      }
+      runDelegatedStream(query, `[ROUTE_DIRECT:PhantomAgent] ${p}`);
+      return;
+    }
+
+    if (lowerQuery.startsWith('/sentinel')) {
+      const p = query.slice('/sentinel'.length).trim() || 'run full defensive audit and timeline analysis';
+      runDelegatedStream(query, `[ROUTE_DIRECT:SentinelAgent] ${p}`);
+      return;
+    }
+
+    if (lowerQuery.startsWith('/recon ')) {
+      const p = query.slice('/recon '.length).trim();
+      if (!p) {
+        setPromptValue('');
+        appendTurn(query, 'Usage: /recon <target>\nExample: /recon scan and enumerate subdomains for target.com');
+        return;
+      }
+      runDelegatedStream(query, `[ROUTE_DIRECT:ReconAgent] ${p}`);
+      return;
+    } else if (lowerQuery.startsWith('/loot')) {
+      const arg = query.slice('/loot'.length).trim().toLowerCase();
+      setPromptValue('');
+      runImmediateTask(query, async () => {
+        const { getLootStore } = await import('./core/LootStore.js');
+        const store = getLootStore();
+        if (arg === 'stats') return store.getStats();
+        if (arg === 'export') return store.exportJson();
+        if (arg === 'hashcat') return store.exportHashcat() || 'No hashes in vault.';
+        return store.query({ target: arg || undefined });
+      });
+      return;
+    } else if (lowerQuery.startsWith('/attack-graph')) {
+      setPromptValue('');
+      runImmediateTask(query, async () => {
+        const { getAttackGraph } = await import('./core/AttackGraph.js');
+        const graph = getAttackGraph();
+        return graph.planNextPhase();
+      });
       return;
     }
 
@@ -652,7 +805,7 @@ const App = () => {
     setPromptValue(promptHistory[nextIndex]);
   };
 
-  useInput((char, key) => {
+  const handleCharInput = (char: string, key: any) => {
     if (key.ctrl && char === 'c') {
       exit();
       return;
@@ -694,24 +847,37 @@ const App = () => {
       }
     }
 
-    if (key.return && !isStreaming) {
+    if (key.return) {
       if (showSuggestions && filteredCommands.length > 0) {
         const completed = filteredCommands[selectedSuggestionIndex]?.name || input;
-        submitPrompt(completed);
+        if (isStreaming) {
+          pushPromptHistory(completed);
+          setQueuedQueries((prev) => [...prev, completed]);
+          setPromptValue('');
+        } else {
+          submitPrompt(completed);
+        }
         return;
       }
       if (input.trim().length > 0) {
-        submitPrompt(input);
+        if (isStreaming) {
+          const q = input.trim();
+          pushPromptHistory(q);
+          setQueuedQueries((prev) => [...prev, q]);
+          setPromptValue('');
+        } else {
+          submitPrompt(input);
+        }
       }
-      return;
-    }
-
-    if (isStreaming) {
       return;
     }
 
     if (key.escape) {
-      setPromptValue('');
+      if (input.length > 0) {
+        setPromptValue('');
+      } else if (isStreaming) {
+        cancelCurrentTask();
+      }
       return;
     }
 
@@ -774,10 +940,37 @@ const App = () => {
       return;
     }
 
-    if (!isStreaming && char && !key.upArrow && !key.downArrow && !key.leftArrow && !key.rightArrow && !key.ctrl && !key.meta) {
+    if (char && !key.upArrow && !key.downArrow && !key.leftArrow && !key.rightArrow && !key.ctrl && !key.meta) {
       const nextValue = input.slice(0, inputCursor) + char + input.slice(inputCursor);
       setPromptValue(nextValue, inputCursor + char.length);
     }
+  };
+
+  useInput((char, key) => {
+    // Intercept multi-line pastes, but ignore single Enter keystrokes (\r or \n)
+    if (char && char.length > 1 && (char.includes('\r') || char.includes('\n'))) {
+      const parts = char.split(/\r\n|\r|\n/);
+      let tempTrusted = isTrusted;
+      for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (!part) continue;
+
+        if (!tempTrusted) {
+          if (part === '1') {
+            process.env.VERTEX_WORKSPACE_ROOT = process.cwd();
+            setIsTrusted(true);
+            tempTrusted = true;
+          } else if (part === '2') {
+            exit();
+          }
+        } else {
+          submitPrompt(part);
+        }
+      }
+      return;
+    }
+
+    handleCharInput(char, key);
   });
 
   if (!isTrusted) {
@@ -797,11 +990,10 @@ const App = () => {
         )}
       </Static>
       {isStreaming && history.length > 0 && (
-          <Box marginY={1} flexDirection="column">
-            <Text color={history[history.length - 1].role === 'user' ? 'cyan' : 'white'} dimColor={history[history.length - 1].role === 'assistant'}>
-               {history[history.length - 1].role === 'user' ? '> ' : ''}{history[history.length - 1].content}
-            </Text>
-          </Box>
+        <ActiveStreamView 
+          content={history[history.length - 1].content} 
+          role={history[history.length - 1].role} 
+        />
       )}
 
       {isStreaming && <AgentStatusMonitor message="Agent is thinking..." />}
@@ -830,6 +1022,7 @@ const App = () => {
           input={input} 
           isStreaming={isStreaming} 
           selectedSuggestionIndex={selectedSuggestionIndex} 
+          queuedQueries={queuedQueries}
         />
       )}
     </Box>

@@ -65,7 +65,7 @@ const STATE_DIR = path.join(os.homedir(), '.vertex', 'gpu_jobs');
 
 function ensureStateDir() {
     if (!fs.existsSync(STATE_DIR)) {
-        fs.mkdirSync(STATE_DIR, { recursive: true });
+        fs.mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 });
     }
 }
 
@@ -74,7 +74,8 @@ function saveJob(handle: InstanceHandle, config: JobConfig) {
     const record = { handle, config, startedAt: new Date().toISOString() };
     fs.writeFileSync(
         path.join(STATE_DIR, `${handle.instanceId}.json`),
-        JSON.stringify(record, null, 2)
+        JSON.stringify(record, null, 2),
+        { mode: 0o600 }
     );
 }
 

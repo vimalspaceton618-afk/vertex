@@ -57,7 +57,7 @@ class DelegateTaskTool implements Tool {
         required: ["agentName"]
     };
 
-    async *execute(args: any, requestConfirmation: (msg: string) => Promise<boolean>): AsyncGenerator<string, string, unknown> {
+    async *execute(args: any, requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): AsyncGenerator<string, string, unknown> {
         const {
             agentName,
             prompt = "",
@@ -91,10 +91,11 @@ class DelegateTaskTool implements Tool {
 
         const agent = new AgentClass();
         yield `\n[ROUTING]: Handing off task to ${agentName}...\n`;
-        const stream = agent.run(handoffPrompt, requestConfirmation);
+        const stream = agent.run(handoffPrompt, requestConfirmation, signal);
         
         let subOutput = "";
         for await (const chunk of stream) {
+            if (signal?.aborted) break;
             yield chunk;
             subOutput += chunk;
         }
@@ -108,7 +109,7 @@ class DelegateTaskTool implements Tool {
             maxDurationMs: typeof maxDurationMs === 'number' ? maxDurationMs : null
         });
 
-        const shouldVerify = agentName === "DeveloperAgent" && requiresVerification !== false;
+        const shouldVerify = agentName === "DeveloperAgent" && requiresVerification !== false && !signal?.aborted;
         if (shouldVerify) {
             const QualityAgent = (subagents as any).QualityAgent;
             if (QualityAgent) {
@@ -121,9 +122,10 @@ class DelegateTaskTool implements Tool {
                     "3) Report concrete failures and likely fixes.",
                     `Developer output excerpt:\n${subOutput.slice(0, 6000)}`
                 ].join('\n');
-                const verifyStream = verifier.run(verifyPrompt, requestConfirmation);
+                const verifyStream = verifier.run(verifyPrompt, requestConfirmation, signal);
                 let verifyOutput = "";
                 for await (const chunk of verifyStream) {
+                    if (signal?.aborted) break;
                     yield chunk;
                     verifyOutput += chunk;
                 }
@@ -172,12 +174,12 @@ export class AgentManager extends BaseAgent {
         this.registry.register(new ListPluginsTool());
     }
 
-    public async *delegateTask(input: string, requestConfirmation: (msg: string) => Promise<boolean>): AsyncGenerator<string> {
+    public async *delegateTask(input: string, requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): AsyncGenerator<string> {
         const directRoute = input.match(/^\[ROUTE_DIRECT:([A-Za-z0-9_]+)\]\s*([\s\S]*)$/);
         if (directRoute) {
             const [, agentName, prompt] = directRoute;
             const tool = new DelegateTaskTool();
-            yield* tool.execute({ agentName, prompt }, requestConfirmation);
+            yield* tool.execute({ agentName, prompt }, requestConfirmation, signal);
             return;
         }
 
@@ -186,7 +188,7 @@ export class AgentManager extends BaseAgent {
             ? `${input}\n\nUse available session memory when relevant.\n${memoryBlock}`
             : input;
         SharedContext.updateSession({ lastUserInput: input });
-        yield* this.run(enrichedInput, requestConfirmation);
+        yield* this.run(enrichedInput, requestConfirmation, signal);
     }
 
     public recordTurn(userInput: string, assistantOutput: string) {

@@ -10,6 +10,9 @@ import {
     ProcessInspectorTool,
     EnvSecretsScannerTool,
 } from '../tools/LinuxSecurity.js';
+import { YaraScanTool, LogAnalyzeTool, IocCheckTool, BaselineDiffTool, MemoryStringsTool, TimelineForensicsTool } from '../tools/DefenseOps.js';
+import { OpsecAuditTool } from '../tools/OpSec.js';
+import { OPSEC_SYSTEM_INSTRUCTIONS, DEFENSIVE_AGENT_SUPPLEMENT } from '../core/SystemInstructions.js';
 
 export class CyberAgent extends BaseAgent {
 
@@ -17,35 +20,17 @@ export class CyberAgent extends BaseAgent {
         super(
             "CyberAgent",
             `You are VERTEX CyberAgent — a specialized, elite cybersecurity analyst and penetration testing assistant.
-You operate with full situational awareness of the host system and are equipped with powerful security audit tools.
 
-YOUR CORE MISSION:
-- Perform deep security audits on directories, configurations, and running services.
-- Investigate suspicious behavior: unusual processes, open ports, exposed secrets, and tampered files.
-- Execute untrusted or unknown scripts safely in isolated Docker sandboxes to protect the host.
-- Test containment and safety-research behavior only inside hardened sandboxes.
-- Provide actionable threat analysis with clear risk ratings (CRITICAL / HIGH / MEDIUM / LOW / INFO).
-- Never minimize or downplay real findings — be precise, technical, and thorough.
+${OPSEC_SYSTEM_INSTRUCTIONS}
 
-TOOLSET:
-- sandbox_execute: Isolate and run untrusted commands inside an ephemeral Alpine container.
-- safety_sandbox_execute: Run safety research inside a hardened Docker container with no network, read-only root filesystem, tmpfs-only writable paths, and no host fallback.
-- dns_lookup: Investigate DNS health, identify hijacking, and verify configurations.
-- port_scan: Map open ports using nmap or native TCP scanner.
-- network_audit: Inspect active connections, listeners, and suspicious sockets.
-- file_integrity: Generate SHA-256 manifests to detect tampering.
-- process_inspect: List and filter running system processes.
-- env_secrets_scan: Detect leaked API keys, passwords, and tokens in config files.
-- read_file: Read configuration and log files for deep inspection.
-- list_directory: Enumerate directory structures for attack surface mapping.
-- execute_command: Run native diagnostic commands when sandboxing is not required.
+${DEFENSIVE_AGENT_SUPPLEMENT}
 
-REPORT FORMAT:
-When completing a security audit, always structure your response as:
-1. EXECUTIVE SUMMARY — 2–3 line overview of findings.
-2. FINDINGS TABLE — Severity | Category | Detail.
-3. RECOMMENDATIONS — Ordered by priority (CRITICAL first).
-4. NEXT STEPS — What to investigate or remediate next.`
+YOUR ARSENAL:
+- Sandboxing: sandbox_execute, safety_sandbox_execute
+- System Audit: dns_lookup, port_scan, network_audit, file_integrity, process_inspect, env_secrets_scan
+- Defensive Forensics: yara_scan, log_analyze, ioc_check, baseline_diff, memory_strings, timeline_forensics
+- Security Audit: opsec_audit
+`
         );
     }
 
@@ -62,12 +47,19 @@ When completing a security audit, always structure your response as:
         this.registry.register(new ProcessInspectorTool());
         this.registry.register(new EnvSecretsScannerTool());
 
-        // File system access for log and config inspection
+        // Defensive Operations
+        this.registry.register(new YaraScanTool());
+        this.registry.register(new LogAnalyzeTool());
+        this.registry.register(new IocCheckTool());
+        this.registry.register(new BaselineDiffTool());
+        this.registry.register(new MemoryStringsTool());
+        this.registry.register(new TimelineForensicsTool());
+        this.registry.register(new OpsecAuditTool());
+
+        // Filesystem & Diagnostics
         this.registry.register(new ReadFileTool());
         this.registry.register(new WriteFileTool());
         this.registry.register(new ListDirTool());
-
-        // Shell execution for diagnostic commands
         this.registry.register(new ShellTool());
     }
 }

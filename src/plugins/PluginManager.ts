@@ -53,7 +53,17 @@ function loadWorkspaceManifests(): PluginManifest[] {
         try {
             const parsed = JSON.parse(fs.readFileSync(fullPath, 'utf-8')) as PluginManifest;
             if (!parsed?.id || !parsed?.name || !parsed?.toolsetKey) continue;
-            manifests.push({ ...parsed, source: 'workspace' });
+            // Validate property types and sanitize toolsetKey
+            if (typeof parsed.id !== 'string' || typeof parsed.name !== 'string' || typeof parsed.toolsetKey !== 'string') continue;
+            if (!/^[a-zA-Z0-9_-]+$/.test(parsed.id) || !BUILTIN_TOOLSET_FACTORIES[parsed.toolsetKey]) continue;
+            manifests.push({
+                ...parsed,
+                id: parsed.id,
+                name: parsed.name,
+                toolsetKey: parsed.toolsetKey,
+                supportedAgents: Array.isArray(parsed.supportedAgents) ? parsed.supportedAgents : ['*'],
+                source: 'workspace'
+            });
         } catch {
             // ignore malformed plugin manifest
         }

@@ -8,5 +8,5 @@ export abstract class Tool {
      * @param args The JSON parsed arguments from the LLM
      * @param requestConfirmation A callback that the tool can invoke to pause and ask the user for Y/N approval
      */
-    abstract execute(args: any, requestConfirmation: (promptMessage: string) => Promise<boolean>): Promise<string> | AsyncGenerator<string, string, unknown>;
+    abstract execute(args: any, requestConfirmation: (promptMessage: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> | AsyncGenerator<string, string, unknown>;
 }

@@ -7,3 +7,6 @@ export * from './BrowserAgent.js';
 export * from './NetworkAgent.js';
 export * from './CyberAgent.js';
 export * from './NyxAgent.js';
+export * from './PhantomAgent.js';
+export * from './SentinelAgent.js';
+export * from './ReconAgent.js';
