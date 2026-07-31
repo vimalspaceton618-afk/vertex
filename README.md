@@ -1,178 +1,236 @@
 # VERTEX
 
-<p align="center">
-  <img src="docs/screenshot.png" alt="VERTEX Terminal Interface" width="800"/>
-</p>
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
+[![npm version](https://img.shields.io/npm/v/vertex)]()
+[![License](https://img.shields.io/badge/license-UNLICENSED-red)]()
 
-<p align="center">
-  <strong>An agentic, terminal-native cybersecurity assistant for software engineering, system auditing, and threat response.</strong>
-</p>
+A terminal-native, agentic cybersecurity assistant for code, system auditing, and threat response.
 
-<p align="center">
-  <a href="#installation">Installation</a> •
-  <a href="#quickstart">Quickstart</a> •
-  <a href="#core-capabilities">Capabilities</a> •
-  <a href="#agent-architecture">Architecture</a> •
-  <a href="#security--sandbox">Security</a> •
-  <a href="#slash-commands">Commands</a>
-</p>
+VERTEX runs in your terminal and coordinates specialized subagents to perform tasks such as code audits, sandboxed execution of untrusted scripts, network reconnaissance, and automated browser-based research.
 
----
+Why VERTEX?
+- Fast, TTY-native UI for quick workflows in a developer terminal.
+- Hardened Docker-based sandbox for safe execution of untrusted commands and malware research.
+- Multi-agent orchestration for security-specific tasks (audit, recon, monitoring, payload testing).
 
-VERTEX is a powerful AI coding and security assistant that operates directly in your terminal. It understands your codebase, audits Linux system surfaces, executes untrusted code in isolated sandboxes, and automates multi-step development and cybersecurity tasks using natural language.
-
-Built on an agentic multi-agent architecture, VERTEX routes requests to specialized autonomous subagents—from security auditing and web reconnaissance to reverse engineering and code generation.
-
-## Features
-
-- 🤖 **Agentic Multi-Agent System**: Automatically routes tasks to specialized agents (`CyberAgent`, `DeveloperAgent`, `ReconAgent`, `SentinelAgent`, `PhantomAgent`, `BrowserAgent`).
-- 🛡️ **Hardened Docker Sandbox**: Run untrusted commands, malware research, or containerized checks in ephemeral Alpine Linux containers with zero network access and strict resource limits.
-- 🔍 **Integrated Security Audit Suite**: Built-in system tools for secret scanning (`env_secrets_scan`), process analysis (`process_inspect`), file integrity manifests (`file_integrity`), and network surface mapping (`port_scan`, `network_audit`).
-- ⚡ **Terminal-Native TTY Interface**: Reactive Ink interface built for speed, real-time status telemetry, autocomplete slash commands, and seamless workspace awareness.
-- 🌐 **Web Reconnaissance & Browser Agent**: Puppeteer-driven browser navigation, screenshot generation, and URL text summarization.
-- 🔌 **Extensible Plugin Framework**: Integrated connectors (GitHub, Slack), devtools, workflow automation, and custom tool suites.
+Table of Contents
+- Installation
+- Quickstart
+- Examples
+- Core Capabilities
+- Agent Architecture
+- Security & Sandbox Isolation
+- Configuration Reference
+- Slash Commands
+- Contributing
+- License
+- Troubleshooting & FAQ
+- Roadmap
 
 ---
 
 ## Installation
 
 ### Prerequisites
+- Node.js: v20.x or higher (v22+ recommended). Use nvm to manage versions: `nvm install 22 && nvm use 22`
+- Git
+- Docker (Optional but strongly recommended for sandboxed execution)
 
-- **Node.js**: v20.x or higher (v22+ recommended)
-- **Git**
-- **Docker** *(Optional, recommended for sandboxed execution)*
+> Note: Docker is optional for basic CLI features but required for safe sandboxed runs. Ensure Docker daemon is running before using `/sandbox` functionality.
 
-### Installation Script
-
-#### macOS / Linux
+### Install (macOS / Linux)
 ```bash
 git clone https://github.com/vimalspaceton618-afk/vertex.git
 cd vertex
-npm install
+npm ci
 npm run build
 npm link
 ```
 
-#### Windows (PowerShell)
+### Install (Windows - PowerShell)
 ```powershell
 git clone https://github.com/vimalspaceton618-afk/vertex.git
 cd vertex
-npm install
+npm ci
 npm run build
 npm link
 ```
 
-Once linked, run `vertex` from any directory in your terminal.
-
----
-
-## Quickstart
-
-### 1. Set up Environment Variables
-
-Create a `.env` file in your project directory:
-
-```bash
-cp .env.example .env
-```
-
-Configure your API keys:
-```env
-OPENAI_API_KEY=your_llm_api_key
-OPENAI_BASE_URL=https://openrouter.ai/api/v1
-AI_MODEL=google/gemma-4-26b-a4b-it:free
-```
-
-### 2. Start VERTEX
-
-Launch an interactive session inside your project workspace:
-
+Run from anywhere:
 ```bash
 vertex
 ```
 
 ---
 
+## Quickstart
+
+1. Copy environment template and edit:
+```bash
+cp .env.example .env
+# Edit .env -> add OPENAI_API_KEY and other vars
+```
+
+Sample .env:
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+AI_MODEL=google/gemma-4-26b-a4b-it:free
+VERTEX_WORKSPACE_ROOT=
+SHELL_TIMEOUT_MS=60000
+```
+
+2. Start VERTEX in a project directory:
+```bash
+vertex
+```
+
+3. Example session (interactive):
+- Prompt: "Audit this repo for exposed secrets"
+- VERTEX will run `env_secrets_scan`, present findings, and suggest remediation steps.
+
+CLI quick demo:
+```text
+$ vertex
+VERTEX > /audit .
+[CyberAgent] Running secrets scan...
+[CyberAgent] Found 1 potential secret in config/.env.example: REDACTED_KEY
+[DeveloperAgent] Suggestion: rotate key, add to .gitignore, add pattern to secret rules
+```
+
+---
+
+## Examples
+
+- Run command in sandbox:
+```bash
+/sandbox python3 test_payload.py
+# Runs inside ephemeral Alpine container with no network and strict limits
+```
+
+- Run full audit (secrets, network cursory scan, file integrity)
+```bash
+/audit ./src
+```
+
+- Screenshot and summarize a URL:
+```bash
+/screenshot-url https://example.com
+/summarize-url https://example.com/blog-post
+```
+
+Add more concrete examples for common workflows (copy/paste inputs and sample outputs) so new users can learn quickly.
+
+---
+
 ## Core Capabilities
 
-### Natural Language Security Operations
-
-VERTEX accepts natural language prompts to perform end-to-end security and engineering workflows:
-
-- *"Audit this codebase for exposed secret keys and passwords."*
-- *"Scan open ports on 192.168.1.1 and generate a security report."*
-- *"Run `python3 test_payload.py` inside an isolated Docker sandbox."*
-- *"Check for modified core files against the SHA-256 integrity manifest."*
+- Agentic Multi-Agent System: CyberAgent, DeveloperAgent, ReconAgent, SentinelAgent, PhantomAgent, BrowserAgent
+- Hardened Docker Sandbox: ephemeral Alpine containers, no network, memory/process caps
+- Integrated security audits: secrets scanning (`env_secrets_scan`), process inspection (`process_inspect`), file integrity manifests (`file_integrity`)
+- Puppeteer-driven BrowserAgent: webpage scraping, screenshots, summarization
+- Extensible plugin framework: connectors for GitHub, Slack, and user-defined tool suites
 
 ---
 
 ## Agent Architecture
 
-VERTEX coordinates a team of specialized subagents:
-
-| Agent | Icon | Specialized Domain |
-|---|:---:|---|
-| **CyberAgent** | 🛡️ | Primary security orchestrator, system audits, threat analysis |
-| **DeveloperAgent** | 💻 | Refactoring, feature building, bug fixing, file edits |
-| **ReconAgent** | 📡 | Network scanning, target footprinting, OSINT |
-| **SentinelAgent** | 🦅 | System monitoring, integrity verification, defense operations |
-| **PhantomAgent** | 👻 | Covert payload testing, evasion analysis, security research |
-| **BrowserAgent** | 🌐 | Automated browser tasks, web scraping, screenshot capture |
+| Agent | Role |
+|---|---|
+| CyberAgent | Security orchestrator — audits & threat analysis |
+| DeveloperAgent | Code edits, refactoring, fixes |
+| ReconAgent | Network footprinting, OSINT |
+| SentinelAgent | Monitoring, integrity verification |
+| PhantomAgent | Covert payload testing & research |
+| BrowserAgent | Automated web tasks & scraping |
 
 ---
 
 ## Security & Sandbox Isolation
 
-VERTEX prioritizes safety when interacting with host environments and untrusted code:
+VERTEX is designed with safety-first defaults, but running analysis tools and untrusted code always carries risk. Follow these rules:
+- Use Docker sandboxes for untrusted code — do not run unknown scripts directly on your host.
+- Rotate and never commit API keys or secrets to git.
+- Limit workspace access and run in constrained accounts or VMs when testing malware.
 
-| Layer | Technology | Network Access | Storage | Scope |
-|---|---|:---:|:---:|---|
-| **Isolated Sandbox** | Ephemeral Docker Alpine | Disabled | In-Memory / Ephemeral | Untrusted scripts, research |
-| **Restricted Host** | Subprocess Execution | Host Default | Workspace | Trusted local commands |
+Sandbox constraints:
+- Memory capped at 256 MB
+- Process limit capped at 64 PIDs
+- All Linux capabilities dropped (CapDrop: ALL)
+- No network access inside sandbox containers
+- Containers destroyed automatically after execution
 
-*Docker Container Constraints*:
-- Memory capped at `256MB`
-- Process limit capped at `64 PIDs`
-- All Linux capabilities dropped (`CapDrop: ALL`)
-- Automatic container destruction post-execution
-
----
-
-## Slash Commands
-
-VERTEX provides instant shortcut commands inside the terminal:
-
-```text
-/sandbox <cmd>      Run command inside an isolated Docker container
-/audit [path]       Run full audit (secrets + network + integrity + processes)
-/search <query>     Perform web research using BrowserAgent
-/open <url>         Navigate to a URL and inspect title
-/summarize-url <url> Extract and summarize web page content
-/screenshot-url <url> Capture full-page web screenshot
-/health             Inspect VERTEX runtime status
-/help               Display command menu
-/exit               Terminate VERTEX session
-```
+Responsible disclosure:
+- If you discover a security vulnerability in VERTEX, please use GitHub's private security advisories or open an issue labeled `security`. Add a SECURITY.md to the repo with your preferred contact method.
 
 ---
 
 ## Configuration Reference
 
 | Variable | Default | Description |
-|---|---|---|
-| `OPENAI_API_KEY` | — | API key for LLM provider |
-| `OPENAI_BASE_URL` | — | Provider endpoint (OpenAI, OpenRouter, Local Ollama) |
-| `AI_MODEL` | `gpt-4o` | LLM model identifier |
-| `VERTEX_WORKSPACE_ROOT` | `cwd()` | Base directory for workspace operations |
-| `SHELL_TIMEOUT_MS` | `60000` | Execution timeout for subprocesses |
+|---|---:|---|
+| OPENAI_API_KEY | — | API key for LLM provider |
+| OPENAI_BASE_URL | — | Provider endpoint (OpenAI, OpenRouter, local agent) |
+| AI_MODEL | gpt-4o | LLM identifier |
+| VERTEX_WORKSPACE_ROOT | cwd() | Base directory for workspace operations |
+| SHELL_TIMEOUT_MS | 60000 | Subprocess execution timeout in ms |
+
+Provide a complete `.env.example` in the repo with commented descriptions.
+
+---
+
+## Slash Commands
+
+Use the interactive slash command interface:
+
+- `/sandbox <cmd>` — Run command inside an isolated Docker container
+- `/audit [path]` — Run full audit (secrets + network + integrity + processes)
+- `/search <query>` — Web research using BrowserAgent
+- `/open <url>` — Inspect a URL (title/metadata)
+- `/summarize-url <url>` — Extract & summarize page content
+- `/screenshot-url <url>` — Capture a full-page screenshot
+- `/health` — Inspect runtime status
+- `/help` — Display command menu
+- `/exit` — Terminate session
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please submit an Issue or Pull Request to the [GitHub Repository](https://github.com/vimalspaceton618-afk/vertex).
+Contributions welcome! Please:
+1. Read CONTRIBUTING.md and CODE_OF_CONDUCT.md
+2. Open issues for bugs or feature requests
+3. Create PRs against `main` with a clear description and tests where applicable
+
+Add templates: ISSUE_TEMPLATE.md and PULL_REQUEST_TEMPLATE.md to make contributions consistent.
+
+---
 
 ## License
 
-This software is proprietary and **UNLICENSED**. All rights reserved by **SpaceTon**.
+This project is currently UNLICENSED. If you intend to allow reuse, add an appropriate license (MIT, Apache-2.0, or similar). Update the badge and LICENSE file accordingly.
 
+---
+
+## Troubleshooting & FAQ
+
+Q: I see "sandbox: permission denied" when running Docker
+A: Ensure your user is in the `docker` group or use `sudo` for Docker commands.
+
+Q: LLM calls time out
+A: Check API key, provider URL, and that your quota/plan supports the requested model.
+
+Add a short list of common errors and fixes.
+
+---
+
+## Roadmap & Changelog
+- Roadmap: list planned features such as enhanced plugin marketplace, RBAC for multi-user installs, offline model support.
+- Keep a CHANGELOG.md tracking releases, fixes, and breaking changes.
+
+---
+
+## Maintainers / Contact
+- Maintainer: SpaceTon
+- Repo: https://github.com/vimalspaceton618-afk/vertex
+- Security contact: use GitHub private security advisories or open a private issue labeled "security"
