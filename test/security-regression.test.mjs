@@ -81,11 +81,12 @@ test('workspace path resolver rejects traversal and symlink escapes', () => {
 });
 
 test('daemon only accepts browser origins on loopback hosts', () => {
-  assert.equal(isAllowedDaemonOrigin('http://127.0.0.1:8899'), true);
-  assert.equal(isAllowedDaemonOrigin('http://localhost:8899'), true);
-  assert.equal(isAllowedDaemonOrigin('https://example.com'), false);
-  assert.equal(isAllowedDaemonOrigin('null'), false);
-  assert.equal(isAllowedDaemonOrigin('http://localhost.evil.example'), false);
+  assert.equal(isAllowedDaemonOrigin('http://127.0.0.1:8899', 8899), true);
+  assert.equal(isAllowedDaemonOrigin('http://localhost:8899', 8899), true);
+  assert.equal(isAllowedDaemonOrigin('https://example.com', 8899), false);
+  assert.equal(isAllowedDaemonOrigin('http://localhost:5173', 8899), false);
+  assert.equal(isAllowedDaemonOrigin('null', 8899), false);
+  assert.equal(isAllowedDaemonOrigin('http://localhost.evil.example:8899', 8899), false);
 });
 
 test('GraphQL string literal encoding preserves content without raw line breaks', () => {
