@@ -9,6 +9,11 @@ import os from 'os';
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 
+/** Encode arbitrary data as a GraphQL string literal (JSON string escapes are GraphQL-compatible). */
+export function toGraphQLStringLiteral(value: unknown): string {
+    return JSON.stringify(String(value));
+}
+
 // ---------------------------------------------------------------------------
 // Provider Abstraction
 // ---------------------------------------------------------------------------
@@ -172,17 +177,17 @@ class RunPodProvider implements GpuProvider {
         const mutation = `
             mutation {
                 podFindAndDeployOnDemand(input: {
-                    name: "vertex-gpu-${Date.now()}"
-                    imageName: "${config.image}"
-                    gpuTypeId: "${gpuTypeId}"
+                    name: ${toGraphQLStringLiteral(`vertex-gpu-${Date.now()}`)}
+                    imageName: ${toGraphQLStringLiteral(config.image)}
+                    gpuTypeId: ${toGraphQLStringLiteral(gpuTypeId)}
                     gpuCount: 1
                     volumeInGb: ${config.diskGb}
                     containerDiskInGb: ${Math.max(20, config.diskGb)}
                     minVcpuCount: 4
                     minMemoryInGb: 16
-                    ports: "${config.ports.map(p => `${p}/http`).join(',')}"
-                    env: [${envArray.map(e => `{key: "${e.key}", value: "${e.value}"}`).join(',')}]
-                    dockerArgs: "${config.args.join(' ')}"
+                    ports: ${toGraphQLStringLiteral(config.ports.map(p => `${p}/http`).join(','))}
+                    env: [${envArray.map(e => `{key: ${toGraphQLStringLiteral(e.key)}, value: ${toGraphQLStringLiteral(e.value)}}`).join(',')}]
+                    dockerArgs: ${toGraphQLStringLiteral(config.args.join(' '))}
                 }) {
                     id
                     imageName
@@ -207,7 +212,7 @@ class RunPodProvider implements GpuProvider {
     async destroy(handle: InstanceHandle): Promise<string> {
         const mutation = `
             mutation {
-                podTerminate(input: { podId: "${handle.instanceId}" })
+                podTerminate(input: { podId: ${toGraphQLStringLiteral(handle.instanceId)} })
             }
         `;
         await this.graphql(mutation);
@@ -218,7 +223,7 @@ class RunPodProvider implements GpuProvider {
     async status(handle: InstanceHandle): Promise<InstanceStatus> {
         const query = `
             query {
-                pod(input: { podId: "${handle.instanceId}" }) {
+                pod(input: { podId: ${toGraphQLStringLiteral(handle.instanceId)} }) {
                     id
                     desiredStatus
                     runtime { uptimeInSeconds gpus { gpuUtilPerc memoryUtilPerc } }
