@@ -76,13 +76,23 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
   );
 };
 
-export const AgentStatusMonitor: React.FC<{ message: string }> = ({ message }) => {
+export type TaskLifecycleStatus = 'starting' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export const AgentStatusMonitor: React.FC<{ message: string; status?: TaskLifecycleStatus }> = ({
+  message,
+  status = 'running'
+}) => {
+  const active = status === 'starting' || status === 'running';
+  const color = status === 'completed' ? 'green' : status === 'failed' ? 'red' : status === 'cancelled' ? 'yellow' : 'cyan';
+  const label = status === 'starting' ? 'STARTING' : status === 'running' ? 'RUNNING' : status === 'completed' ? 'COMPLETED' : status === 'failed' ? 'FAILED' : 'CANCELLED';
+
   return (
-    <Box marginY={1} paddingX={1}>
-      <Text color="cyan">
-        <Spinner type="dots" />
-      </Text>
-      <Text color="cyan" italic> {message}</Text>
+    <Box marginY={1} paddingX={1} flexDirection="column">
+      <Box>
+        {active ? <Text color={color}><Spinner type="dots" /> </Text> : <Text color={color} bold>{status === 'completed' ? '✓ ' : status === 'failed' ? '✗ ' : '■ '}</Text>}
+        <Text color={color} bold>{label}</Text>
+        <Text color={active ? color : 'gray'}> · {message}</Text>
+      </Box>
     </Box>
   );
 };
