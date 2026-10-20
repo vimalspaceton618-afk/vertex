@@ -105,10 +105,10 @@ export interface TaskResultSummaryProps {
 }
 
 export const TaskResultSummary: React.FC<TaskResultSummaryProps> = ({ status, durationMs, output }) => {
-  const diffFiles = Array.from(output.matchAll(/^\\+\\+\\+ b\\/(.+)$/gm), (match) => match[1]);
-  const mentionedFiles = Array.from(output.matchAll(/(?:modified|created|deleted|changed)\\s+(?:file\\s+)?[:"]?([\\w./@-]+\\.[\\w-]+)/gi), (match) => match[1]);
+  const diffFiles = Array.from(output.matchAll(/^\+\+\+ b\/(.+)$/gm), (match) => match[1]);
+  const mentionedFiles = Array.from(output.matchAll(/(?:modified|created|deleted|changed)\s+(?:file\s+)?[:"]?([\w./@-]+\.[\w-]+)/gi), (match) => match[1]);
   const files = Array.from(new Set([...diffFiles, ...mentionedFiles])).slice(0, 6);
-  const testLine = output.match(/(?:\\d+\\s+passed|tests?\\s+passed|all tests? passed|npm test[^\\n]*|\\d+\\s+failed|tests?\\s+failed)/i);
+  const testLine = output.match(/(?:\d+\s+passed|tests?\s+passed|all tests? passed|npm test[^\n]*|\d+\s+failed|tests?\s+failed)/i);
   const duration = durationMs < 1000 ? String(durationMs) + ' ms' : (durationMs / 1000).toFixed(1) + ' s';
   const statusColor = status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'yellow';
 
