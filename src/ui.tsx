@@ -455,7 +455,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         '',
         'Tip: type / followed by a few letters to filter commands. Use Tab or ↑/↓ to select, then Enter.',
         'Use ? to view keyboard shortcuts.'
-      ].join('\\n'))
+      ].join('\\n'));
       return;
     }
 
