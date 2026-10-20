@@ -47,7 +47,7 @@ const server = http.createServer(async (req, res) => {
                 rejected = true;
                 res.writeHead(413, { 'Content-Type': 'text/plain; charset=utf-8' });
                 res.end('Request body too large.');
-                req.destroy();
+                req.resume();
                 return;
             }
             body += chunkText;
