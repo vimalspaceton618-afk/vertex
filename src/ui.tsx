@@ -124,7 +124,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
           </Text>
           {queuedQueries.map((q, idx) => (
             <Text key={`queued-${idx}-${q.slice(0, 10)}`} color="dim">
-              {"  "}{idx + 1}. {q}
+              {"  "}{idx + 1}. {q.length > 110 ? `${q.slice(0, 107)}…` : q}
             </Text>
           ))}
         </Box>
@@ -138,28 +138,31 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       {/* Dynamic Suggestions or Help */}
       <Box marginTop={0} flexDirection="column">
         {showSuggestions ? (
-          filteredCommands.length > 0 ? (
-            filteredCommands.map((cmd, idx) => (
-              <Box key={cmd.name} flexDirection="row">
-                <Box width={18}>
-                  <Text color={idx === selectedSuggestionIndex ? 'green' : 'cyan'} bold={idx === selectedSuggestionIndex}>
-                    {idx === selectedSuggestionIndex ? '> ' : '  '}{cmd.name}
-                  </Text>
+          <Box flexDirection="column">
+            <Text color="gray">COMMAND PALETTE · {filteredCommands.length} match{filteredCommands.length === 1 ? '' : 'es'} · Tab/↑/↓ to select</Text>
+            {filteredCommands.length > 0 ? (
+              filteredCommands.map((cmd, idx) => (
+                <Box key={cmd.name} flexDirection="row">
+                  <Box width={20}>
+                    <Text color={idx === selectedSuggestionIndex ? 'green' : 'cyan'} bold={idx === selectedSuggestionIndex}>
+                      {idx === selectedSuggestionIndex ? '› ' : '  '}{cmd.name}
+                    </Text>
+                  </Box>
+                  <Box flexGrow={1}>
+                    <Text color={idx === selectedSuggestionIndex ? 'white' : 'gray'}>{cmd.desc}</Text>
+                  </Box>
                 </Box>
-                <Box flexGrow={1}>
-                  <Text color={idx === selectedSuggestionIndex ? 'white' : 'gray'}>{cmd.desc}</Text>
-                </Box>
-              </Box>
-            ))
-          ) : (
-            <Text color="red">No matching commands found.</Text>
-          )
+              ))
+            ) : (
+              <Text color="yellow">No command matches “{input}”. Try /help to see available commands.</Text>
+            )}
+          </Box>
         ) : input.startsWith('?') ? (
-          <Text color="cyan">Shortcuts: ? (shortcuts) | / (commands) | Ctrl+C (exit) | Esc (cancel/clear) | Up/Down (history)</Text>
+          <Text color="cyan">KEYBOARD · Enter run · Tab/↑/↓ select command · ↑/↓ history · ←/→ edit · Ctrl+A/E start/end · Ctrl+U clear · Esc cancel/clear · Ctrl+C exit</Text>
         ) : isStreaming ? (
-          <Text color="yellow">Agent is working... Press Esc to cancel task | Type next query and press Enter to queue</Text>
+          <Text color="yellow">RUNNING · Esc cancels current task · Enter queues the next task · {queuedQueries.length} queued</Text>
         ) : (
-          <Text color="gray">? for shortcuts | Esc to clear input</Text>
+          <Text color="gray">Enter run · / commands · ? shortcuts · ↑ history · Esc clear input · Ctrl+C exit</Text>
         )}
       </Box>
     </Box>
@@ -980,6 +983,21 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   return (
     <Box flexDirection="column" width="100%">
       <VertexHeader />
+      {history.length === 0 && !isStreaming && (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1} marginY={1}>
+          <Text color="cyan" bold>Welcome to VERTEX</Text>
+          <Text color="white">Your model-agnostic coding and security workspace.</Text>
+          <Box marginTop={1} flexDirection="column">
+            <Text color="gray">Try a task:</Text>
+            <Text color="green">› “Explain this repository and identify its main risks.”</Text>
+            <Text color="green">› “Find a bug, add a regression test, and run the tests.”</Text>
+            <Text color="green">› “/health”  ·  “/scope”  ·  “/help”</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text color="gray">Tip: use / to discover commands, ? for shortcuts, and Esc to cancel a running task.</Text>
+          </Box>
+        </Box>
+      )}
       <Static items={isStreaming ? history.slice(0, -1) : history}>
         {(h) => (
           <Box key={h.id} marginY={1} flexDirection="column">
@@ -996,7 +1014,13 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         />
       )}
 
-      {isStreaming && <AgentStatusMonitor message="Agent is thinking..." />}
+      {isStreaming && (
+        <AgentStatusMonitor
+          message={queuedQueries.length > 0
+            ? `Working on your task · ${queuedQueries.length} task${queuedQueries.length === 1 ? '' : 's'} queued · Esc to cancel`
+            : 'Working on your task · Esc to cancel'}
+        />
+      )}
 
       {confirmPrompt && (
         <PermissionPrompt 
