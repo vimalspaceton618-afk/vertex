@@ -6,6 +6,22 @@ let orchestrator: AgentManager | null = null;
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_PROMPT_CHARS = 20_000;
 
+/**
+ * Browser-origin requests to the loopback daemon are only accepted from loopback
+ * origins. Requests from local Node clients normally omit Origin.
+ */
+export function isAllowedDaemonOrigin(origin: string): boolean {
+    try {
+        const parsed = new URL(origin);
+        const host = parsed.hostname.toLowerCase();
+        return (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+            (host === 'localhost' || host === '127.0.0.1' || host === '[::1]') &&
+            !parsed.username && !parsed.password;
+    } catch {
+        return false;
+    }
+}
+
 export function getOrchestrator(): AgentManager {
     if (!orchestrator) {
         orchestrator = new AgentManager();
@@ -35,6 +51,19 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/run' && req.method === 'POST') {
+        const origin = req.headers.origin;
+        if (origin && !isAllowedDaemonOrigin(origin)) {
+            res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Cross-origin daemon requests are not allowed.');
+            return;
+        }
+        const contentType = (req.headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase();
+        if (contentType !== 'application/json') {
+            res.writeHead(415, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Content-Type must be application/json.');
+            return;
+        }
+
         let body = '';
         let bodyBytes = 0;
         let rejected = false;
