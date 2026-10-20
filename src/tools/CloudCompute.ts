@@ -149,6 +149,22 @@ class RunPodProvider implements GpuProvider {
     }
 
     async provision(config: JobConfig): Promise<InstanceHandle> {
+        // These values are interpolated as GraphQL numeric literals; reject invalid
+        // runtime inputs rather than relying on TypeScript types at the API boundary.
+        if (!Number.isInteger(config.diskGb) || config.diskGb < 1 || config.diskGb > 10000) {
+            throw new Error('diskGb must be an integer between 1 and 10000.');
+        }
+        if (!Array.isArray(config.ports) || config.ports.some((port) => !Number.isInteger(port) || port < 1 || port > 65535)) {
+            throw new Error('ports must be an array of integers between 1 and 65535.');
+        }
+        if (!Array.isArray(config.args) || config.args.some((arg) => typeof arg !== 'string')) {
+            throw new Error('args must be an array of strings.');
+        }
+        if (!config.env || typeof config.env !== 'object' || Array.isArray(config.env) ||
+            Object.entries(config.env).some(([key, value]) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || typeof value !== 'string')) {
+            throw new Error('env must contain valid environment variable names and string values.');
+        }
+
         const gpuMap: Record<string, string> = {
             'a100': 'NVIDIA A100 80GB PCIe',
             'a100-80': 'NVIDIA A100 80GB PCIe',
