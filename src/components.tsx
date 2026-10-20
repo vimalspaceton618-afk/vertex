@@ -97,6 +97,46 @@ export const AgentStatusMonitor: React.FC<{ message: string; status?: TaskLifecy
   );
 };
 
+
+export interface TaskResultSummaryProps {
+  status: TaskLifecycleStatus;
+  durationMs: number;
+  output: string;
+}
+
+export const TaskResultSummary: React.FC<TaskResultSummaryProps> = ({ status, durationMs, output }) => {
+  const diffFiles = Array.from(output.matchAll(/^\\+\\+\\+ b\\/(.+)$/gm), (match) => match[1]);
+  const mentionedFiles = Array.from(output.matchAll(/(?:modified|created|deleted|changed)\\s+(?:file\\s+)?[:"]?([\\w./@-]+\\.[\\w-]+)/gi), (match) => match[1]);
+  const files = Array.from(new Set([...diffFiles, ...mentionedFiles])).slice(0, 6);
+  const testLine = output.match(/(?:\\d+\\s+passed|tests?\\s+passed|all tests? passed|npm test[^\\n]*|\\d+\\s+failed|tests?\\s+failed)/i);
+  const duration = durationMs < 1000 ? String(durationMs) + ' ms' : (durationMs / 1000).toFixed(1) + ' s';
+  const statusColor = status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'yellow';
+
+  return (
+    <Box borderStyle="round" borderColor={statusColor} paddingX={1} paddingY={1} flexDirection="column" marginY={1}>
+      <Box justifyContent="space-between">
+        <Text bold color={statusColor}>TASK SUMMARY · {status.toUpperCase()}</Text>
+        <Text dimColor>{duration}</Text>
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text color="cyan" bold>Changed files (detected)</Text>
+        {files.length > 0
+          ? files.map((file) => <Text key={file} dimColor>• {file}</Text>)
+          : <Text dimColor>No changed-file evidence detected in the response.</Text>}
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text color="cyan" bold>Test evidence (detected)</Text>
+        {testLine
+          ? <Text dimColor>{testLine[0]}</Text>
+          : <Text color="yellow">No explicit test result detected. Verification is unconfirmed.</Text>}
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>Output: {output.length.toLocaleString()} characters · Based on returned text, not independent repository inspection.</Text>
+      </Box>
+    </Box>
+  );
+};
+
 export interface ToolExecutionCardProps {
   toolName: string;
   command: string;
