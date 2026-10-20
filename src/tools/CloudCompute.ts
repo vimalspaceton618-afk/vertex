@@ -1,12 +1,13 @@
 import { Tool } from './Tool.js';
 import { SharedContext } from '../core/agent/SharedContext.js';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ---------------------------------------------------------------------------
 // Provider Abstraction
@@ -885,10 +886,24 @@ export class GpuSshTool extends Tool {
         const approved = await requestConfirmation(`[GPU SSH] Run on ${handle.ip}:\n  > ${args.command}`);
         if (!approved) return '[USER OVERRIDE]: SSH command cancelled.';
 
-        const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p ${handle.sshPort || 22} root@${handle.ip} "${args.command.replace(/"/g, '\\"')}"`;
+        if (!/^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])$/.test(handle.ip)) {
+            return '[SSH ERROR]: Invalid host address for this instance.';
+        }
+        const port = handle.sshPort ?? 22;
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+            return '[SSH ERROR]: Invalid SSH port for this instance.';
+        }
 
+        // Avoid local shell interpolation and do not disable host-key verification.
+        // accept-new pins the first observed key and rejects later key changes.
         try {
-            const { stdout, stderr } = await execAsync(sshCmd, { timeout: 60000, maxBuffer: 1024 * 1024 });
+            const { stdout, stderr } = await execFileAsync('ssh', [
+                '-o', 'StrictHostKeyChecking=accept-new',
+                '-o', 'ConnectTimeout=10',
+                '-p', String(port),
+                '--', `root@${handle.ip}`,
+                String(args.command)
+            ], { timeout: 60000, maxBuffer: 1024 * 1024 });
             return (stdout.trim() + (stderr.trim() ? `\nSTDERR: ${stderr.trim()}` : '')) || 'Command completed.';
         } catch (e: any) {
             return `[SSH ERROR]: ${e.message}\n${e.stderr || ''}`;
