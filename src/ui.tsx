@@ -1046,7 +1046,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
       {taskStage !== 'idle' && (
         <AgentStatusMonitor
-          status={taskStage === 'idle' ? 'running' : taskStage}
+          status={taskStage}
           message={isStreaming
             ? `${taskLabel}${queuedQueries.length > 0 ? ` · ${queuedQueries.length} queued` : ''} · Esc to cancel`
             : taskLabel}
