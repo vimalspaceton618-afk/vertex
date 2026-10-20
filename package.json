@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc",
     "start": "node ./dist/cli.js",
-    "test": "npm run build && node --test test"
+    "test": "npm run build && node --test test/*.test.mjs"
   },
   "repository": {
     "type": "git",
