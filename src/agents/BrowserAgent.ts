@@ -192,7 +192,7 @@ export class BrowserAgent extends BaseAgent {
     }
 
     public async ensurePage(): Promise<Page> {
-        if (BrowserAgent.browser && !BrowserAgent.browser.isConnected()) {
+        if (BrowserAgent.browser && !BrowserAgent.browser.connected) {
             BrowserAgent.browser = null;
             BrowserAgent.page = null;
         }
