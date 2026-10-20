@@ -2,10 +2,36 @@ import { Tool } from './Tool.js';
 import { enforceToolPolicy } from '../core/policy/PolicyEngine.js';
 import { DockerSandboxTool } from './DockerSandbox.js';
 import { ToolRegistry } from './registry.js';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
+import * as net from 'net';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+/**
+ * Validate SSH destination components before passing them to the SSH client.
+ * Commands remain shell commands on the remote host by design, but the local
+ * SSH invocation must never interpolate user-controlled host/user values.
+ */
+export function validateRemoteTarget(host: string, user: string): string | null {
+    if (!user || !/^[A-Za-z_][A-Za-z0-9_.-]{0,31}$/.test(user)) {
+        return 'Invalid SSH username.';
+    }
+
+    const candidate = host.trim();
+    const unwrappedHost = candidate.startsWith('[') && candidate.endsWith(']')
+        ? candidate.slice(1, -1)
+        : candidate;
+    const isIpAddress = net.isIP(unwrappedHost) !== 0;
+    const isHostname = /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*\.?$/.test(candidate);
+
+    if (!isIpAddress && !isHostname) {
+        return 'Invalid SSH host; use a hostname or IP address without a port.';
+    }
+
+    return null;
+}
 
 export class AutoExecutorTool implements Tool {
     name = 'auto_executor';
@@ -39,8 +65,16 @@ export class AutoExecutorTool implements Tool {
         args: { generatedCommand: string; executionTarget: 'host' | 'sandbox' | 'remote'; remoteOptions?: { host?: string; user?: string; auth?: string } },
         requestConfirmation: (msg: string) => Promise<boolean>
     ): Promise<string> {
+        if (args.executionTarget === 'remote') {
+            if (!args.remoteOptions?.host || !args.remoteOptions?.user) {
+                return '[REMOTE EXEC ERROR]: Missing remoteOptions (host, user).';
+            }
+            const invalidTarget = validateRemoteTarget(args.remoteOptions.host, args.remoteOptions.user);
+            if (invalidTarget) return `[REMOTE EXEC ERROR]: ${invalidTarget}`;
+        }
+
         const targets = args.executionTarget === 'remote' && args.remoteOptions?.host ? [args.remoteOptions.host] : undefined;
-        
+
         const policyBlock = await enforceToolPolicy({
             toolName: this.name,
             riskLevel: 'unrestricted',
@@ -64,10 +98,15 @@ export class AutoExecutorTool implements Tool {
             if (!args.remoteOptions?.host || !args.remoteOptions?.user) {
                 return '[REMOTE EXEC ERROR]: Missing remoteOptions (host, user).';
             }
-            // A simple SSH wrapper.
-            const sshCommand = `ssh ${args.remoteOptions.user}@${args.remoteOptions.host} "${args.generatedCommand.replace(/"/g, '\\"')}"`;
+            // Use execFile so the local shell never parses the SSH destination.
+            // The remote command is intentionally passed as one SSH command argument.
+            const sshTarget = `${args.remoteOptions.user}@${args.remoteOptions.host}`;
             try {
-                const { stdout, stderr } = await execAsync(sshCommand, { timeout: 30000 });
+                const { stdout, stderr } = await execFileAsync(
+                    'ssh',
+                    ['-o', 'BatchMode=yes', '--', sshTarget, args.generatedCommand],
+                    { timeout: 30000 }
+                );
                 return stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
             } catch (e: any) {
                 return `[REMOTE EXEC ERROR]: ${e.message}`;
