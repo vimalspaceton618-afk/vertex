@@ -27,9 +27,9 @@ jobs:
         run: |
           npm audit --json > "$RUNNER_TEMP/npm-audit.json" || true
           node -e 'const a = require(process.env.RUNNER_TEMP + "/npm-audit.json"); console.log(JSON.stringify({metadata: a.metadata?.vulnerabilities, vulnerabilities: Object.entries(a.vulnerabilities || {}).map(([name, v]) => ({name, severity: v.severity, isDirect: v.isDirect, via: (v.via || []).map(x => typeof x === "string" ? x : x.name), fixAvailable: v.fixAvailable}))}, null, 2))'
+      - name: Build and test
+        run: npm test
       - name: Fail on high or critical dependency advisories
         shell: bash
         run: |
           node -e 'const a = require(process.env.RUNNER_TEMP + "/npm-audit.json"); const v = a.metadata?.vulnerabilities || {}; console.log("Dependency security gate:", JSON.stringify(v)); if ((v.high || 0) > 0 || (v.critical || 0) > 0) process.exit(1)'
-      - name: Build and test
-        run: npm test
