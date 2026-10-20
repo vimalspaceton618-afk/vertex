@@ -8,7 +8,7 @@ import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
-import { VertexHeader, AgentStatusMonitor, PermissionPrompt } from './components.js';
+import { VertexHeader, AgentStatusMonitor, PermissionPrompt, type TaskLifecycleStatus } from './components.js';
 
 ensureScopeFile();
 
@@ -179,6 +179,8 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   const [historyCursor, setHistoryCursor] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [taskStage, setTaskStage] = useState<TaskLifecycleStatus | 'idle'>('idle');
+  const [taskLabel, setTaskLabel] = useState('');
   const [queuedQueries, setQueuedQueries] = useState<string[]>([]);
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
   const [autoApproveTools] = useState(false);
@@ -211,6 +213,8 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       currentAbortController.current = null;
     }
     setQueuedQueries([]);
+    setTaskStage('cancelled');
+    setTaskLabel('Task cancelled by user');
     setIsStreaming(false);
     updateLastAssistant('[CANCELLED: Task interrupted by user via Esc]');
   };
@@ -289,6 +293,8 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     currentAbortController.current = controller;
     appendTurn(query);
     setPromptValue('');
+    setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
+    setTaskStage('starting');
     setIsStreaming(true);
 
     let fullText = '';
@@ -306,6 +312,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         // Silent fallback
       }
 
+      setTaskStage('running');
       if (useDaemon) {
         const response = await fetch('http://127.0.0.1:8899/run', {
           method: 'POST',
@@ -338,13 +345,18 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
           orchestrator.recordTurn(query, fullText);
         }
       }
+      if (!controller.signal.aborted) setTaskStage('completed');
     } catch (error: any) {
       if (error.name === 'AbortError' || controller.signal.aborted) {
         fullText += '\n[CANCELLED: Task interrupted by user via Esc]';
+        setTaskStage('cancelled');
+        setTaskLabel('Task cancelled by user');
         updateLastAssistantThrottled(fullText, true);
       } else {
         const message = error instanceof Error ? error.message : String(error);
         fullText = `[VERTEX ERROR] ${message}`;
+        setTaskStage('failed');
+        setTaskLabel(message.length > 72 ? message.slice(0, 69) + '…' : message);
         updateLastAssistantThrottled(fullText, true);
       }
     } finally {
@@ -361,18 +373,27 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     currentAbortController.current = controller;
     setPromptValue('');
     appendTurn(query);
+    setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
+    setTaskStage('starting');
     setIsStreaming(true);
     void (async () => {
       try {
+        setTaskStage('running');
         const result = await task();
         if (!controller.signal.aborted) {
           updateLastAssistant(result);
           orchestrator.recordTurn(query, result);
+          setTaskStage('completed');
+        } else {
+          setTaskStage('cancelled');
+          setTaskLabel('Task cancelled by user');
         }
       } catch (error: any) {
         if (!controller.signal.aborted) {
           const message = error instanceof Error ? error.message : String(error);
           updateLastAssistant(`[VERTEX ERROR] ${message}`);
+          setTaskStage('failed');
+          setTaskLabel(message.length > 72 ? message.slice(0, 69) + '…' : message);
         }
       } finally {
         if (currentAbortController.current === controller) {
@@ -1021,11 +1042,12 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         />
       )}
 
-      {isStreaming && (
+      {taskStage !== 'idle' && (
         <AgentStatusMonitor
-          message={queuedQueries.length > 0
-            ? `Working on your task · ${queuedQueries.length} task${queuedQueries.length === 1 ? '' : 's'} queued · Esc to cancel`
-            : 'Working on your task · Esc to cancel'}
+          status={taskStage === 'idle' ? 'running' : taskStage}
+          message={isStreaming
+            ? `${taskLabel}${queuedQueries.length > 0 ? ` · ${queuedQueries.length} queued` : ''} · Esc to cancel`
+            : taskLabel}
         />
       )}
 
