@@ -3,6 +3,9 @@ import { AgentManager } from './agent/AgentManager.js';
 
 let orchestrator: AgentManager | null = null;
 
+const MAX_REQUEST_BYTES = 64 * 1024;
+const MAX_PROMPT_CHARS = 20_000;
+
 export function getOrchestrator(): AgentManager {
     if (!orchestrator) {
         orchestrator = new AgentManager();
@@ -11,52 +14,121 @@ export function getOrchestrator(): AgentManager {
 }
 
 const server = http.createServer(async (req, res) => {
-    const url = new URL(req.url || '', `http://${req.headers.host}`);
+    // Use a fixed base URL: routing must not depend on an untrusted Host header.
+    let pathname: string;
+    try {
+        pathname = new URL(req.url || '/', 'http://127.0.0.1').pathname;
+    } catch {
+        res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Bad request URL.');
+        return;
+    }
 
-    if (url.pathname === '/status') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (pathname === '/status' && req.method === 'GET') {
+        res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store',
+            'X-Content-Type-Options': 'nosniff'
+        });
         res.end(JSON.stringify({ status: 'running', pid: process.pid }));
         return;
     }
 
-    if (url.pathname === '/run' && req.method === 'POST') {
+    if (pathname === '/run' && req.method === 'POST') {
         let body = '';
-        req.on('data', chunk => { body += chunk; });
+        let bodyBytes = 0;
+        let rejected = false;
+
+        req.on('data', (chunk: Buffer | string) => {
+            if (rejected) return;
+            const chunkText = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+            bodyBytes += Buffer.byteLength(chunkText, 'utf8');
+            if (bodyBytes > MAX_REQUEST_BYTES) {
+                rejected = true;
+                res.writeHead(413, { 'Content-Type': 'text/plain; charset=utf-8' });
+                res.end('Request body too large.');
+                req.destroy();
+                return;
+            }
+            body += chunkText;
+        });
+
         req.on('end', async () => {
+            if (rejected || res.destroyed) return;
             try {
-                const { prompt, autoApprove } = JSON.parse(body);
+                const payload: unknown = JSON.parse(body);
+                if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+                    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+                    res.end('Expected a JSON object.');
+                    return;
+                }
+
+                const { prompt } = payload as { prompt?: unknown };
+                if (typeof prompt !== 'string' || !prompt.trim()) {
+                    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+                    res.end('A non-empty string prompt is required.');
+                    return;
+                }
+                if (prompt.length > MAX_PROMPT_CHARS) {
+                    res.writeHead(413, { 'Content-Type': 'text/plain; charset=utf-8' });
+                    res.end(`Prompt exceeds the ${MAX_PROMPT_CHARS}-character limit.`);
+                    return;
+                }
+
                 res.writeHead(200, {
-                    'Content-Type': 'text/plain',
+                    'Content-Type': 'text/plain; charset=utf-8',
                     'Transfer-Encoding': 'chunked',
-                    'Cache-Control': 'no-cache',
+                    'Cache-Control': 'no-cache, no-store',
+                    'X-Content-Type-Options': 'nosniff',
                     'Connection': 'keep-alive'
                 });
 
                 const manager = getOrchestrator();
-                // Simple confirmation handler in daemon mode
-                const confirm = async (msg: string) => {
-                    return Boolean(autoApprove);
-                };
+                // Never trust a request-body flag to grant execution approval.
+                // Unattended approval is an explicit local process configuration.
+                const autoApprove = process.env.VERTEX_DAEMON_AUTO_APPROVE === 'true';
+                const confirm = async (_msg: string) => autoApprove;
 
                 const stream = manager.delegateTask(prompt, confirm);
                 for await (const chunk of stream) {
+                    if (res.destroyed) break;
                     res.write(chunk);
                 }
-                res.end();
+                if (!res.destroyed) res.end();
             } catch (e: any) {
-                res.writeHead(500, { 'Content-Type': 'text/plain' });
+                if (res.headersSent) {
+                    if (!res.destroyed) res.end();
+                    return;
+                }
+                res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
                 res.end(`[DAEMON ERROR]: ${e.message}`);
+            }
+        });
+
+        req.on('error', () => {
+            if (!res.headersSent && !res.destroyed) {
+                res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+                res.end('Request could not be read.');
             }
         });
         return;
     }
 
-    res.writeHead(404);
-    res.end();
+    if (pathname === '/run' && req.method !== 'POST') {
+        res.writeHead(405, { 'Allow': 'POST', 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end('Method not allowed.');
+        return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Not found.');
 });
 
 export function startDaemon(port = 8899) {
     server.listen(port, '127.0.0.1', () => {
         console.log(`[DAEMON]: Server running at http://127.0.0.1:${port}`);
+        if (process.env.VERTEX_DAEMON_AUTO_APPROVE === 'true') {
+            console.warn('[DAEMON WARNING]: VERTEX_DAEMON_AUTO_APPROVE is enabled; tool approvals will be automatic.');
+        }
     });
 }
