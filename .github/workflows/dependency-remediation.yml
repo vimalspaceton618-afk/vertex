@@ -1,0 +1,52 @@
+name: Dependency remediation (temporary)
+
+on:
+  push:
+    branches:
+      - work/vertex-hardening-2026-10-20
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    if: github.ref == 'refs/heads/work/vertex-hardening-2026-10-20'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout hardening branch
+        uses: actions/checkout@v6
+        with:
+          ref: work/vertex-hardening-2026-10-20
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Upgrade direct dependencies with major fixes available
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+        run: npm install --save 'puppeteer@^25.15.0' 'dockerode@^5.0.1'
+
+      - name: Apply remaining compatible security fixes
+        run: npm audit fix || echo "npm audit fix reported remaining advisories; the audit gate below will decide the result."
+
+      - name: Commit regenerated dependency manifest and lockfile
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No dependency manifest or lockfile changes generated."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "fix(deps): update vulnerable dependency tree"
+          git push origin HEAD:work/vertex-hardening-2026-10-20
+
+      - name: Build and regression tests
+        run: npm test
+
+      - name: Enforce dependency security gate
+        run: npm audit --audit-level=high
