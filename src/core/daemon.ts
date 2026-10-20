@@ -2,6 +2,7 @@ import http from 'http';
 import { AgentManager } from './agent/AgentManager.js';
 
 let orchestrator: AgentManager | null = null;
+let daemonPort = 8899;
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 const MAX_PROMPT_CHARS = 20_000;
@@ -10,12 +11,13 @@ const MAX_PROMPT_CHARS = 20_000;
  * Browser-origin requests to the loopback daemon are only accepted from loopback
  * origins. Requests from local Node clients normally omit Origin.
  */
-export function isAllowedDaemonOrigin(origin: string): boolean {
+export function isAllowedDaemonOrigin(origin: string, expectedPort = daemonPort): boolean {
     try {
         const parsed = new URL(origin);
         const host = parsed.hostname.toLowerCase();
-        return (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
-            (host === 'localhost' || host === '127.0.0.1' || host === '[::1]') &&
+        return parsed.protocol === 'http:' &&
+            (host === 'localhost' || host === '127.0.0.1') &&
+            parsed.port === String(expectedPort) &&
             !parsed.username && !parsed.password;
     } catch {
         return false;
@@ -52,7 +54,7 @@ const server = http.createServer(async (req, res) => {
 
     if (pathname === '/run' && req.method === 'POST') {
         const origin = req.headers.origin;
-        if (origin && !isAllowedDaemonOrigin(origin)) {
+        if (origin && !isAllowedDaemonOrigin(origin, daemonPort)) {
             res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
             res.end('Cross-origin daemon requests are not allowed.');
             return;
@@ -154,6 +156,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 export function startDaemon(port = 8899) {
+    daemonPort = port;
     server.listen(port, '127.0.0.1', () => {
         console.log(`[DAEMON]: Server running at http://127.0.0.1:${port}`);
         if (process.env.VERTEX_DAEMON_AUTO_APPROVE === 'true') {
