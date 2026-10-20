@@ -8,7 +8,7 @@ import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
-import { VertexHeader, AgentStatusMonitor, PermissionPrompt, type TaskLifecycleStatus } from './components.js';
+import { VertexHeader, AgentStatusMonitor, PermissionPrompt, TaskResultSummary, type TaskLifecycleStatus } from './components.js';
 
 ensureScopeFile();
 
@@ -181,6 +181,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   const [isStreaming, setIsStreaming] = useState(false);
   const [taskStage, setTaskStage] = useState<TaskLifecycleStatus | 'idle'>('idle');
   const [taskLabel, setTaskLabel] = useState('');
+  const [taskStartedAt, setTaskStartedAt] = useState(0);
   const [queuedQueries, setQueuedQueries] = useState<string[]>([]);
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
   const [autoApproveTools] = useState(false);
@@ -294,6 +295,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     appendTurn(query);
     setPromptValue('');
     setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
+    setTaskStartedAt(Date.now());
     setTaskStage('starting');
     setIsStreaming(true);
 
@@ -1048,6 +1050,14 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
           message={isStreaming
             ? `${taskLabel}${queuedQueries.length > 0 ? ` · ${queuedQueries.length} queued` : ''} · Esc to cancel`
             : taskLabel}
+        />
+      )}
+
+      {!isStreaming && taskStage !== 'idle' && taskStartedAt > 0 && (
+        <TaskResultSummary
+          status={taskStage}
+          durationMs={Date.now() - taskStartedAt}
+          output={history.filter((item) => item.role === 'assistant').slice(-1)[0]?.content ?? ''}
         />
       )}
 
