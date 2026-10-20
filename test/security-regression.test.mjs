@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { validateRemoteTarget } from '../dist/tools/AutoExecutor.js';
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
+import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
 
 test('remote SSH target validation rejects shell metacharacters in host and username', () => {
   assert.match(validateRemoteTarget('example.com;whoami', 'vimal') ?? '', /Invalid SSH host/);
@@ -53,5 +54,25 @@ test('unrestricted lab mode does not override explicit blocked targets', () => {
     if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
     else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
     fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('workspace path resolver rejects traversal and symlink escapes', () => {
+  const previousRoot = process.env.VERTEX_WORKSPACE_ROOT;
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-workspace-test-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-outside-test-'));
+  try {
+    process.env.VERTEX_WORKSPACE_ROOT = workspace;
+    fs.writeFileSync(path.join(outside, 'secret.txt'), 'outside workspace');
+    fs.symlinkSync(outside, path.join(workspace, 'outside-link'), 'dir');
+
+    assert.throws(() => resolveInsideWorkspace('../outside/secret.txt'), /escapes workspace root/i);
+    assert.throws(() => resolveInsideWorkspace(path.join(outside, 'secret.txt')), /escapes workspace root/i);
+    assert.throws(() => resolveInsideWorkspace('outside-link/secret.txt'), /escapes workspace root/i);
+  } finally {
+    if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
+    else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
+    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
   }
 });
