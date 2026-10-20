@@ -7,6 +7,8 @@ import path from 'node:path';
 import { validateRemoteTarget } from '../dist/tools/AutoExecutor.js';
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
 import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
+import { isAllowedDaemonOrigin } from '../dist/core/daemon.js';
+import { toGraphQLStringLiteral } from '../dist/tools/CloudCompute.js';
 
 test('remote SSH target validation rejects shell metacharacters in host and username', () => {
   assert.match(validateRemoteTarget('example.com;whoami', 'vimal') ?? '', /Invalid SSH host/);
@@ -69,6 +71,7 @@ test('workspace path resolver rejects traversal and symlink escapes', () => {
     assert.throws(() => resolveInsideWorkspace('../outside/secret.txt'), /escapes workspace root/i);
     assert.throws(() => resolveInsideWorkspace(path.join(outside, 'secret.txt')), /escapes workspace root/i);
     assert.throws(() => resolveInsideWorkspace('outside-link/secret.txt'), /escapes workspace root/i);
+    assert.throws(() => resolveInsideWorkspace('outside-link/not-created/nested/file.txt'), /escapes workspace root/i);
   } finally {
     if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
     else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
@@ -76,3 +79,19 @@ test('workspace path resolver rejects traversal and symlink escapes', () => {
     fs.rmSync(outside, { recursive: true, force: true });
   }
 });
+
+test('daemon only accepts browser origins on loopback hosts', () => {
+  assert.equal(isAllowedDaemonOrigin('http://127.0.0.1:8899'), true);
+  assert.equal(isAllowedDaemonOrigin('http://localhost:8899'), true);
+  assert.equal(isAllowedDaemonOrigin('https://example.com'), false);
+  assert.equal(isAllowedDaemonOrigin('null'), false);
+  assert.equal(isAllowedDaemonOrigin('http://localhost.evil.example'), false);
+});
+
+test('GraphQL string literal encoding preserves content without raw line breaks', () => {
+  const input = 'image"\\nmutation { admin }\\\\';
+  const encoded = toGraphQLStringLiteral(input);
+  assert.equal(JSON.parse(encoded), input);
+  assert.equal(encoded.includes('\n'), false);
+});
+
