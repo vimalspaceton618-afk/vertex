@@ -54,3 +54,8 @@ pretrained_store/
 cortex_data/
 synthetic_dataset/
 agent_traces/
+
+# Runtime state and agent memory (local, potentially sensitive)
+.vertex/
+.cortex/
+data/memory.json
