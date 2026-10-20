@@ -108,7 +108,7 @@ export const TaskResultSummary: React.FC<TaskResultSummaryProps> = ({ status, du
   const diffFiles = Array.from(output.matchAll(/^\+\+\+ b\/(.+)$/gm), (match) => match[1]);
   const mentionedFiles = Array.from(output.matchAll(/(?:modified|created|deleted|changed)\s+(?:file\s+)?[:"]?([\w./@-]+\.[\w-]+)/gi), (match) => match[1]);
   const files = Array.from(new Set([...diffFiles, ...mentionedFiles])).slice(0, 6);
-  const testLine = output.match(/(?:\d+\s+passed|tests?\s+passed|all tests? passed|npm test[^\n]*|\d+\s+failed|tests?\s+failed)/i);
+  const testLine = output.match(/(?:# tests\s+\d+[\s\S]{0,160}# pass\s+\d+[\s\S]{0,80}# fail\s+0|(?:tests?|suites?)\s+passed\s*[:=]?\s*\d+|(?:all\s+)?\d+\s+tests?\s+passed|(?:tests?|suites?)\s+failed\s*[:=]?\s*\d+|\d+\s+failed(?:,|\s+and\s+)\s*\d+\s+passed)/i);
   const duration = durationMs < 1000 ? String(durationMs) + ' ms' : (durationMs / 1000).toFixed(1) + ' s';
   const statusColor = status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'yellow';
 
