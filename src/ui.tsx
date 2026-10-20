@@ -448,7 +448,14 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
     if (lowerQuery === '/' || lowerQuery === 'help' || lowerQuery === '/help') {
       setPromptValue('');
-      appendTurn(query, 'VERTEX Terminal Commands:\n/clear - Clear history\n/health - System status\n/scope - View policy\n/exit - Quit\n/sandbox <cmd> - Run isolated Docker command\n/safe-sandbox <cmd> - Safety research\n/audit [path] - Security audit (CyberAgent)\n/nyx <prompt> - Offensive ops (NyxAgent)\n/phantom <prompt> - Red team kill-chain (PhantomAgent)\n/sentinel <prompt> - Blue team defense (SentinelAgent)\n/recon <prompt> - Reconnaissance (ReconAgent)\n/loot [query|stats|export] - Access LootStore vault\n/attack-graph - View kill-chain graph & pivots\n/search <query> - Web search\n/open <url> - Browse URL\n/goal <objective> - Autonomous execution loop\n/schedule <seconds> <cmd> - Schedule recurring task\n/skill <name> <query> - Science skills');
+      appendTurn(query, [
+        'VERTEX COMMANDS',
+        '',
+        ...COMMANDS.map((cmd) => `${cmd.name.padEnd(16)} ${cmd.desc}`),
+        '',
+        'Tip: type / followed by a few letters to filter commands. Use Tab or ↑/↓ to select, then Enter.',
+        'Use ? to view keyboard shortcuts.'
+      ].join('\\n'))
       return;
     }
 
