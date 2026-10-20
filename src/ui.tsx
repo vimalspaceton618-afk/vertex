@@ -182,6 +182,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   const [taskStage, setTaskStage] = useState<TaskLifecycleStatus | 'idle'>('idle');
   const [taskLabel, setTaskLabel] = useState('');
   const [taskStartedAt, setTaskStartedAt] = useState(0);
+  const [taskDurationMs, setTaskDurationMs] = useState(0);
   const [queuedQueries, setQueuedQueries] = useState<string[]>([]);
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
   const [autoApproveTools] = useState(false);
@@ -291,11 +292,13 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
   const runDelegatedStream = async (query: string, routedPrompt = query) => {
     const controller = new AbortController();
+    const startedAt = Date.now();
     currentAbortController.current = controller;
     appendTurn(query);
     setPromptValue('');
     setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
-    setTaskStartedAt(Date.now());
+    setTaskStartedAt(startedAt);
+    setTaskDurationMs(0);
     setTaskStage('starting');
     setIsStreaming(true);
 
@@ -366,16 +369,20 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         currentAbortController.current = null;
       }
       updateLastAssistantThrottled(fullText, true);
+      setTaskDurationMs(Date.now() - startedAt);
       setIsStreaming(false);
     }
   };
 
   const runImmediateTask = (query: string, task: () => Promise<string>) => {
     const controller = new AbortController();
+    const startedAt = Date.now();
     currentAbortController.current = controller;
     setPromptValue('');
     appendTurn(query);
     setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
+    setTaskStartedAt(startedAt);
+    setTaskDurationMs(0);
     setTaskStage('starting');
     setIsStreaming(true);
     void (async () => {
@@ -401,6 +408,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         if (currentAbortController.current === controller) {
           currentAbortController.current = null;
         }
+        setTaskDurationMs(Date.now() - startedAt);
         setIsStreaming(false);
       }
     })();
@@ -1056,7 +1064,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       {!isStreaming && taskStage !== 'idle' && taskStartedAt > 0 && (
         <TaskResultSummary
           status={taskStage}
-          durationMs={Date.now() - taskStartedAt}
+          durationMs={taskDurationMs}
           output={history.filter((item) => item.role === 'assistant').slice(-1)[0]?.content ?? ''}
         />
       )}
