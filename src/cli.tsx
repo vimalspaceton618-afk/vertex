@@ -46,8 +46,8 @@ program.command('doctor')
     commandHandled = true;
     const report = collectDiagnostics();
     process.stdout.write(commandOptions.json
-      ? `${JSON.stringify(report, null, 2)}\\n`
-      : `${formatDiagnosticReport(report)}\\n`);
+      ? `${JSON.stringify(report, null, 2)}\n`
+      : `${formatDiagnosticReport(report)}\n`);
     if (!report.ok) process.exitCode = 1;
   });
 
@@ -57,10 +57,10 @@ program.command('init')
     commandHandled = true;
     try {
       const result = initializeWorkspaceConfig(process.cwd());
-      process.stdout.write(`${result.message}\\n`);
+      process.stdout.write(`${result.message}\n`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      process.stderr.write(`[INIT ERROR] ${message}\\n`);
+      process.stderr.write(`[INIT ERROR] ${message}\n`);
       process.exitCode = 1;
     }
   });
