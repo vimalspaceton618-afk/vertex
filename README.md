@@ -86,7 +86,7 @@ The doctor checks Node.js, workspace access, configuration-file validity/permiss
 vertex
 ```
 
-3. Example session (interactive):
+Example session (interactive):
 - Prompt: "Audit this repo for exposed secrets"
 - VERTEX will run `env_secrets_scan`, present findings, and suggest remediation steps.
 
