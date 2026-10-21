@@ -78,7 +78,7 @@ This creates `.env` only if it does not already exist, uses user-only file permi
 vertex doctor
 # Machine-readable output:
 vertex doctor --json
-``
+```
 The doctor checks Node.js, workspace access, configuration-file validity/permissions, provider configuration, Git, and optional Docker availability. It does not print secret values or launch containers/agent tasks.
 
 4. Start VERTEX in that workspace:
@@ -170,13 +170,16 @@ Responsible disclosure:
 
 | Variable | Default | Description |
 |---|---:|---|
-| OPENAI_API_KEY | — | API key for LLM provider |
-| OPENAI_BASE_URL | — | Provider endpoint (OpenAI, OpenRouter, local agent) |
-| AI_MODEL | gpt-4o | LLM identifier |
-| VERTEX_WORKSPACE_ROOT | cwd() | Base directory for workspace operations |
+| OPENAI_API_KEY | empty | API key for a cloud LLM provider; keep it private |
+| OPENAI_BASE_URL | empty | Optional OpenAI-compatible cloud provider endpoint |
+| AI_MODEL | runtime default | Optional model identifier |
+| BRAIN_MODE | cloud | Provider mode: `cloud`, `local`, or `offline` |
+| LOCAL_BASE_URL | `http://127.0.0.1:11434/v1` in global config | Local OpenAI-compatible endpoint |
+| LOCAL_MODEL | empty | Model identifier for local/offline mode |
+| WORKSPACE_ROOT | empty | Optional workspace restriction; blank uses the current workspace |
 | SHELL_TIMEOUT_MS | 60000 | Subprocess execution timeout in ms |
 
-Provide a complete `.env.example` in the repo with commented descriptions.
+Run `vertex init` to create a private, workspace-local `.env` template. It intentionally leaves credential fields empty and never overwrites an existing file. Do not commit `.env`; the checked-in ignore rules exclude it.
 
 ---
 
