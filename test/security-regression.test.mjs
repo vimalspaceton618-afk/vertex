@@ -4,11 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import { EventEmitter } from 'node:events';
 
 import { validateRemoteTarget } from '../dist/tools/AutoExecutor.js';
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
 import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
-import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer } from '../dist/core/daemon.js';
+import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer, createDaemonAbortController } from '../dist/core/daemon.js';
 import { toGraphQLStringLiteral } from '../dist/tools/CloudCompute.js';
 
 test('remote SSH target validation rejects shell metacharacters in host and username', () => {
@@ -133,6 +134,32 @@ test('GraphQL string literal encoding preserves content without raw line breaks'
   const encoded = toGraphQLStringLiteral(input);
   assert.equal(JSON.parse(encoded), input);
   assert.equal(encoded.includes('\n'), false);
+});
+
+test('daemon abort controller cancels work on client disconnect and cleans up listeners', () => {
+  const request = new EventEmitter();
+  const response = new EventEmitter();
+  response.writableFinished = false;
+
+  const { controller, cleanup } = createDaemonAbortController(request, response);
+  assert.equal(controller.signal.aborted, false);
+  response.emit('close');
+  assert.equal(controller.signal.aborted, true);
+  cleanup();
+  assert.equal(request.listenerCount('aborted'), 0);
+  assert.equal(response.listenerCount('close'), 0);
+});
+
+test('daemon abort controller does not cancel completed responses', () => {
+  const request = new EventEmitter();
+  const response = new EventEmitter();
+  response.writableFinished = true;
+
+  const { controller, cleanup } = createDaemonAbortController(request, response);
+  response.emit('close');
+  request.emit('aborted');
+  assert.equal(controller.signal.aborted, false);
+  cleanup();
 });
 
 test('daemon HTTP boundary rejects malformed, oversized, wrong-type, and cross-origin requests', async () => {
