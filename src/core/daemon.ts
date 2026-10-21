@@ -137,12 +137,25 @@ export const daemonServer = http.createServer(async (req, res) => {
                 const autoApprove = process.env.VERTEX_DAEMON_AUTO_APPROVE === 'true';
                 const confirm = async (_msg: string) => autoApprove;
 
-                const stream = manager.delegateTask(prompt, confirm);
-                for await (const chunk of stream) {
-                    if (res.destroyed) break;
-                    res.write(chunk);
+                const controller = new AbortController();
+                const abortOnDisconnect = () => {
+                    if (!res.writableFinished && !controller.signal.aborted) controller.abort();
+                };
+                const onRequestAborted = () => abortOnDisconnect();
+                const onResponseClose = () => abortOnDisconnect();
+                req.once('aborted', onRequestAborted);
+                res.once('close', onResponseClose);
+                try {
+                    const stream = manager.delegateTask(prompt, confirm, controller.signal);
+                    for await (const chunk of stream) {
+                        if (controller.signal.aborted || res.destroyed) break;
+                        res.write(chunk);
+                    }
+                    if (!res.destroyed) res.end();
+                } finally {
+                    req.removeListener('aborted', onRequestAborted);
+                    res.removeListener('close', onResponseClose);
                 }
-                if (!res.destroyed) res.end();
             } catch (e: any) {
                 if (res.headersSent) {
                     if (!res.destroyed) res.end();
