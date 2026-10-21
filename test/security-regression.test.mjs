@@ -10,7 +10,7 @@ import { validateRemoteTarget, AutoExecutorTool } from '../dist/tools/AutoExecut
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
 import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
 import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer, createDaemonAbortController } from '../dist/core/daemon.js';
-import { awaitWithAbort, waitForRetryDelay } from '../dist/core/agent/BaseAgent.js';
+import { awaitWithAbort, iterateWithAbort, waitForRetryDelay } from '../dist/core/agent/BaseAgent.js';
 import { toGraphQLStringLiteral } from '../dist/tools/CloudCompute.js';
 
 test('remote SSH target validation rejects shell metacharacters in host and username', () => {
@@ -197,6 +197,40 @@ test('agent orchestration stops waiting on an operation after abort', async () =
   controller.abort();
   await assert.rejects(waiting, /Operation aborted/);
   clearTimeout(timer);
+});
+
+test('agent tool stream stops waiting for a stalled next item after abort', async () => {
+  const controller = new AbortController();
+  let returnCalled = false;
+  const stream = {
+    [Symbol.asyncIterator]() {
+      return {
+        next: () => new Promise(() => {}),
+        return: async () => {
+          returnCalled = true;
+          return { value: undefined, done: true };
+        }
+      };
+    }
+  };
+  const consuming = (async () => {
+    for await (const _chunk of iterateWithAbort(stream, controller.signal)) {
+      // No chunks are emitted by this deliberately stalled stream.
+    }
+  })();
+  controller.abort();
+  let timer;
+  try {
+    await Promise.race([
+      consuming,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Stream consumption did not stop after abort')), 1000);
+      })
+    ]);
+    assert.equal(returnCalled, true);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 });
 
 test('agent retry delay is interrupted promptly when its signal aborts', async () => {
