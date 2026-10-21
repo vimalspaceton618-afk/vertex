@@ -58,7 +58,7 @@ export function getOrchestrator(): AgentManager {
     return orchestrator;
 }
 
-const server = http.createServer(async (req, res) => {
+export const daemonServer = http.createServer(async (req, res) => {
     // Use a fixed base URL: routing must not depend on an untrusted Host header.
     let pathname: string;
     try {
@@ -174,7 +174,7 @@ const server = http.createServer(async (req, res) => {
 
 export function startDaemon(port = 8899) {
     daemonPort = port;
-    server.listen(port, '127.0.0.1', () => {
+    daemonServer.listen(port, '127.0.0.1', () => {
         console.log(`[DAEMON]: Server running at http://127.0.0.1:${port}`);
         if (process.env.VERTEX_DAEMON_AUTO_APPROVE === 'true') {
             console.warn('[DAEMON WARNING]: VERTEX_DAEMON_AUTO_APPROVE is enabled; tool approvals will be automatic.');
