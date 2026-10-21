@@ -96,7 +96,7 @@ test('daemon payload validation rejects non-object JSON values and malformed pro
     assert.equal(result.status, 400);
   }
 
-  for (const prompt of ['', '   ', '\\n\\t', 7, null, {}, []]) {
+  for (const prompt of ['', '   ', '\n\t', 7, null, {}, []]) {
     const result = validateDaemonPayload({ prompt });
     assert.equal(result.ok, false);
     assert.equal(result.status, 400);
