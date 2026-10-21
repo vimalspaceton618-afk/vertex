@@ -36,8 +36,36 @@ export class ConfigManager {
     }
 
     static init() {
-        // 1. Load local .env if the user is explicitly developing VERTEX
-        dotenv.config();
+        // 1. Load a workspace .env without following symlinks or racing a path swap.
+        // Match dotenv's default precedence: pre-existing process environment wins.
+        const workspaceEnvPath = path.resolve(process.cwd(), '.env');
+        try {
+            const envPathStat = fs.lstatSync(workspaceEnvPath);
+            if (envPathStat.isSymbolicLink() || !envPathStat.isFile()) {
+                throw new Error('Refusing to load workspace .env because it is a symbolic link or not a regular file.');
+            }
+            const noFollow = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0;
+            const envFd = fs.openSync(workspaceEnvPath, fs.constants.O_RDONLY | noFollow);
+            try {
+                const openedStat = fs.fstatSync(envFd);
+                const currentPathStat = fs.lstatSync(workspaceEnvPath);
+                if (!openedStat.isFile()
+                    || currentPathStat.isSymbolicLink()
+                    || !currentPathStat.isFile()
+                    || currentPathStat.dev !== openedStat.dev
+                    || currentPathStat.ino !== openedStat.ino) {
+                    throw new Error('Refusing to load workspace .env because its path changed during inspection.');
+                }
+                const parsedEnv = dotenv.parse(fs.readFileSync(envFd, 'utf8'));
+                for (const [key, value] of Object.entries(parsedEnv)) {
+                    if (process.env[key] === undefined) process.env[key] = value;
+                }
+            } finally {
+                fs.closeSync(envFd);
+            }
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+        }
 
         // 2. Ensure the config directory is a real, private directory. Inspect before creating
         // so a pre-existing directory symlink is never traversed by mkdir.
