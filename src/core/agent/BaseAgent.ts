@@ -138,6 +138,45 @@ export function waitForRetryDelay(ms: number, signal?: AbortSignal): Promise<boo
     });
 }
 
+/**
+ * Let the orchestration loop stop waiting when a task is cancelled.
+ * The underlying operation still needs to honor the same signal to stop its own work.
+ */
+export function awaitWithAbort<T>(operation: PromiseLike<T> | T, signal?: AbortSignal): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(new Error('Operation aborted.'));
+            return;
+        }
+
+        let settled = false;
+        const cleanup = () => signal?.removeEventListener('abort', onAbort);
+        const onAbort = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new Error('Operation aborted.'));
+        };
+
+        signal?.addEventListener('abort', onAbort, { once: true });
+        Promise.resolve(operation).then(
+            (value) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(value);
+            },
+            (error) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(error);
+            }
+        );
+        if (signal?.aborted) onAbort();
+    });
+}
+
 export abstract class BaseAgent {
     protected history: Message[] = [];
     protected registry = new ToolRegistry();
@@ -309,7 +348,7 @@ export abstract class BaseAgent {
                         }
                         try {
                             const args = JSON.parse(toolCall.function.arguments);
-                            const executionResult = await tool.execute(args, requestConfirmation, signal);
+                            const executionResult = await awaitWithAbort(tool.execute(args, requestConfirmation, signal), signal);
                             let resultStr = '';
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
                                 for await (const chunk of executionResult as any) {
@@ -346,7 +385,7 @@ export abstract class BaseAgent {
                     if (tool) {
                         try {
                             const args = JSON.parse(toolCall.function.arguments);
-                            const executionResult = await tool.execute(args, requestConfirmation, signal);
+                            const executionResult = await awaitWithAbort(tool.execute(args, requestConfirmation, signal), signal);
                             if (signal?.aborted) break;
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
                                 for await (const chunk of executionResult as any) {
@@ -360,6 +399,7 @@ export abstract class BaseAgent {
                         } catch (e: any) {
                             resultStr = `[TOOL PARSE OR EXECUTION ERROR]: ${e.message}`;
                         }
+                        if (signal?.aborted) break;
                     } else {
                         resultStr = `[ERROR]: Tool ${toolName} not found.`;
                     }
