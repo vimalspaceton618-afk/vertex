@@ -84,6 +84,7 @@ export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticR
   const configPath = options.configPath ?? path.join(os.homedir(), '.vertexcli', 'config.json');
   const items: DiagnosticItem[] = [];
   let config: Record<string, unknown> | null = null;
+  let configFileMode: number | undefined;
 
   const add = (name: string, status: DiagnosticStatus, message: string) => {
     items.push({ name, status, message });
@@ -116,7 +117,9 @@ export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticR
     } else {
       fs.accessSync(configPath, fs.constants.R_OK);
       try {
-        const parsed: unknown = JSON.parse(readRegularFileNoFollow(configPath).content);
+        const configFile = readRegularFileNoFollow(configPath);
+        configFileMode = configFile.stat.mode;
+        const parsed: unknown = JSON.parse(configFile.content);
         if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
           add('Global config', 'fail', 'The global config must contain a JSON object.');
         } else {
@@ -127,7 +130,8 @@ export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticR
         add('Global config', 'fail', 'The global config is unreadable or contains invalid JSON.');
       }
 
-      if (platform !== 'win32' && (lstat.mode & 0o077) !== 0) {
+      const inspectedMode = configFileMode ?? lstat.mode;
+      if (platform !== 'win32' && (inspectedMode & 0o077) !== 0) {
         add('Config permissions', 'warn', 'The global config is accessible to group/other users; restrict it to the current user (chmod 600).');
       } else if (platform !== 'win32') {
         add('Config permissions', 'pass', 'The global config has user-only filesystem permissions.');
@@ -154,8 +158,9 @@ export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticR
       add('Workspace .env', 'warn', 'The workspace .env path is not a regular file and was not read.');
     } else {
       fs.accessSync(workspaceEnvPath, fs.constants.R_OK);
-      workspaceEnv = dotenv.parse(readRegularFileNoFollow(workspaceEnvPath).content);
-      if (platform !== 'win32' && (envStat.mode & 0o077) !== 0) {
+      const envFile = readRegularFileNoFollow(workspaceEnvPath);
+      workspaceEnv = dotenv.parse(envFile.content);
+      if (platform !== 'win32' && (envFile.stat.mode & 0o077) !== 0) {
         add('Workspace .env permissions', 'warn', 'The workspace .env is accessible to group/other users; restrict it to the current user (chmod 600).');
       } else if (platform !== 'win32') {
         add('Workspace .env permissions', 'pass', 'The workspace .env has user-only filesystem permissions.');
