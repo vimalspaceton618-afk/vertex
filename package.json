@@ -26,7 +26,7 @@
   "dependencies": {
     "@types/ink-spinner": "^3.0.5",
     "chalk": "^5.6.2",
-    "commander": "^14.0.3",
+    "commander": "^15.0.0",
     "dockerode": "^5.0.1",
     "dotenv": "^17.4.1",
     "ink": "^7.0.0",
