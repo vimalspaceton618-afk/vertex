@@ -39,7 +39,7 @@ export function initializeWorkspaceConfig(cwd: string = process.cwd()): Workspac
     return {
       created: true,
       path: targetPath,
-      message: `Created ${targetPath} with restrictive file permissions and empty credential fields. Edit the file, then restart VERTEX and run `vertex doctor`.`
+      message: `Created ${targetPath} with restrictive file permissions and empty credential fields. Edit the file, then restart VERTEX and run "vertex doctor".`
     };
   } catch (error) {
     if (fd !== undefined) {
