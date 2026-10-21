@@ -17,13 +17,18 @@ export class ProcessManagementTool extends Tool {
         additionalProperties: false
     };
 
-    async execute(args: { action: string, target?: string }, requestConfirmation: (msg: string) => Promise<boolean>): Promise<string> {
+    async execute(
+        args: { action: string, target?: string },
+        requestConfirmation: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
+    ): Promise<string> {
+        if (signal?.aborted) return '[PROCESS CANCELLED]';
         try {
             const isWin = process.platform === 'win32';
             
             if (args.action === 'list') {
                 const cmd = isWin ? 'tasklist' : 'ps aux';
-                const { stdout } = await execAsync(cmd);
+                const { stdout } = await execAsync(cmd, { signal });
                 return `Here are the currently running processes:\n${stdout.substring(0, 4000)}... (truncated if too long)`;
             } 
             else if (args.action === 'kill' && args.target) {
@@ -45,12 +50,13 @@ export class ProcessManagementTool extends Tool {
                     cmd = `kill -9 ${targetClean}`;
                 }
 
-                const { stdout, stderr } = await execAsync(cmd);
+                const { stdout, stderr } = await execAsync(cmd, { signal });
                 return `Process Kill Result:\nSTDOUT: ${stdout}\nSTDERR: ${stderr}`;
             }
 
             return "Invalid action or missing target parameter.";
         } catch (error: any) {
+            if (signal?.aborted) return '[PROCESS CANCELLED]';
             return `[PROCESS ERROR]: ${error.message}`;
         }
     }

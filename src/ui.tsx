@@ -5,12 +5,12 @@ import os from 'os';
 import { AgentManager } from './core/agent/AgentManager.js';
 import { NcbiFetchTool, UniProtFetchTool, PubChemSearchTool, PubMedSearchTool, ArxivSearchTool } from './tools/ScienceSkills.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
-import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
+import { collectDiagnostics, formatDiagnosticReport } from './core/diagnostics.js';
+import { initializeWorkspaceConfig } from './core/setup.js';
+import { describeScope } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
-import { VertexHeader, AgentStatusMonitor, PermissionPrompt } from './components.js';
-
-ensureScopeFile();
+import { VertexHeader, AgentStatusMonitor, PermissionPrompt, TaskResultSummary, type TaskLifecycleStatus } from './components.js';
 
 type HistoryMessage = { id: string; role: 'user' | 'assistant'; content: string };
 type ConfirmPrompt = { message: string; resolve: (value: boolean) => void };
@@ -42,27 +42,32 @@ function TrustGate({ trustCursor }: { trustCursor: number }) {
 }
 
 const COMMANDS = [
+  { name: '/help', desc: 'Show available commands and shortcuts' },
   { name: '/clear', desc: 'Clear history' },
   { name: '/health', desc: 'System status report' },
+  { name: '/doctor', desc: 'Check environment and local configuration safely' },
+  { name: '/init', desc: 'Create a private .env template without overwriting files' },
   { name: '/scope', desc: 'View current policy boundaries' },
   { name: '/exit', desc: 'Quit session' },
   { name: '/sandbox', desc: 'Run command in isolated Docker' },
   { name: '/safe-sandbox', desc: 'Run safety research command in Docker' },
   { name: '/audit', desc: 'Run security audit on path' },
-  { name: '/nyx', desc: 'Offensive operations with NyxAgent' },
-  { name: '/phantom', desc: 'Full-spectrum red team with PhantomAgent' },
-  { name: '/sentinel', desc: 'Blue team defense & forensics with SentinelAgent' },
-  { name: '/recon', desc: 'Reconnaissance with ReconAgent' },
-  { name: '/loot', desc: 'Query encrypted LootStore credential vault' },
-  { name: '/attack-graph', desc: 'View MITRE ATT&CK kill-chain graph & pivots' },
-  { name: '/search', desc: 'Search the web using DuckDuckGo' },
-  { name: '/open', desc: 'Browse target URL' },
-  { name: '/goal', desc: 'Run autonomously until goal is achieved' },
-  { name: '/schedule', desc: 'Schedule a recurring command execution' },
-  { name: '/grill-me', desc: 'Interactive requirements interview' },
+  { name: '/nyx', desc: 'Run NyxAgent security operations' },
+  { name: '/phantom', desc: 'Run PhantomAgent red-team workflow' },
+  { name: '/sentinel', desc: 'Run SentinelAgent defense workflow' },
+  { name: '/recon', desc: 'Run ReconAgent reconnaissance workflow' },
+  { name: '/loot', desc: 'Query the encrypted LootStore' },
+  { name: '/attack-graph', desc: 'View ATT&CK graph and pivots' },
+  { name: '/search', desc: 'Search the web: /search <query>' },
+  { name: '/open', desc: 'Open a URL: /open <url>' },
+  { name: '/summarize-url', desc: 'Summarize a URL: /summarize-url <url>' },
+  { name: '/screenshot-url', desc: 'Save a URL screenshot' },
+  { name: '/goal', desc: 'Run a bounded autonomous goal: /goal <task>' },
+  { name: '/schedule', desc: 'Schedule a command: /schedule <...>' },
+  { name: '/grill-me', desc: 'Interview to clarify task requirements' },
   { name: '/learn', desc: 'Extract and save learned rules' },
-  { name: '/skill', desc: 'Query databases (ncbi, uniprot, pubchem, pubmed, arxiv)' },
-  { name: '/gpu', desc: 'Provision, status, logs, ssh, or destroy GPU jobs' }
+  { name: '/skill', desc: 'Query science databases: /skill <...>' },
+  { name: '/gpu', desc: 'Manage GPU jobs: /gpu <action>' }
 ];
 
 function ActiveStreamView({ content, role }: { content: string; role: 'user' | 'assistant' }) {
@@ -124,7 +129,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
           </Text>
           {queuedQueries.map((q, idx) => (
             <Text key={`queued-${idx}-${q.slice(0, 10)}`} color="dim">
-              {"  "}{idx + 1}. {q}
+              {"  "}{idx + 1}. {q.length > 110 ? `${q.slice(0, 107)}…` : q}
             </Text>
           ))}
         </Box>
@@ -138,28 +143,31 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       {/* Dynamic Suggestions or Help */}
       <Box marginTop={0} flexDirection="column">
         {showSuggestions ? (
-          filteredCommands.length > 0 ? (
-            filteredCommands.map((cmd, idx) => (
-              <Box key={cmd.name} flexDirection="row">
-                <Box width={18}>
-                  <Text color={idx === selectedSuggestionIndex ? 'green' : 'cyan'} bold={idx === selectedSuggestionIndex}>
-                    {idx === selectedSuggestionIndex ? '> ' : '  '}{cmd.name}
-                  </Text>
+          <Box flexDirection="column">
+            <Text color="gray">COMMAND PALETTE · {filteredCommands.length} match{filteredCommands.length === 1 ? '' : 'es'} · Tab/↑/↓ to select</Text>
+            {filteredCommands.length > 0 ? (
+              filteredCommands.map((cmd, idx) => (
+                <Box key={cmd.name} flexDirection="row">
+                  <Box width={20}>
+                    <Text color={idx === selectedSuggestionIndex ? 'green' : 'cyan'} bold={idx === selectedSuggestionIndex}>
+                      {idx === selectedSuggestionIndex ? '› ' : '  '}{cmd.name}
+                    </Text>
+                  </Box>
+                  <Box flexGrow={1}>
+                    <Text color={idx === selectedSuggestionIndex ? 'white' : 'gray'}>{cmd.desc}</Text>
+                  </Box>
                 </Box>
-                <Box flexGrow={1}>
-                  <Text color={idx === selectedSuggestionIndex ? 'white' : 'gray'}>{cmd.desc}</Text>
-                </Box>
-              </Box>
-            ))
-          ) : (
-            <Text color="red">No matching commands found.</Text>
-          )
+              ))
+            ) : (
+              <Text color="yellow">No command matches “{input}”. Try /help to see available commands.</Text>
+            )}
+          </Box>
         ) : input.startsWith('?') ? (
-          <Text color="cyan">Shortcuts: ? (shortcuts) | / (commands) | Ctrl+C (exit) | Esc (cancel/clear) | Up/Down (history)</Text>
+          <Text color="cyan">KEYBOARD · Enter run · Tab/↑/↓ select command · ↑/↓ history · ←/→ edit · Ctrl+A/E start/end · Ctrl+U clear · Esc cancel/clear · Ctrl+C exit</Text>
         ) : isStreaming ? (
-          <Text color="yellow">Agent is working... Press Esc to cancel task | Type next query and press Enter to queue</Text>
+          <Text color="yellow">RUNNING · Esc cancels current task · Enter queues the next task · {queuedQueries.length} queued</Text>
         ) : (
-          <Text color="gray">? for shortcuts | Esc to clear input</Text>
+          <Text color="gray">Enter run · / commands · ? shortcuts · ↑ history · Esc clear input · Ctrl+C exit</Text>
         )}
       </Box>
     </Box>
@@ -176,6 +184,10 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   const [historyCursor, setHistoryCursor] = useState<number | null>(null);
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [taskStage, setTaskStage] = useState<TaskLifecycleStatus | 'idle'>('idle');
+  const [taskLabel, setTaskLabel] = useState('');
+  const [taskStartedAt, setTaskStartedAt] = useState(0);
+  const [taskDurationMs, setTaskDurationMs] = useState(0);
   const [queuedQueries, setQueuedQueries] = useState<string[]>([]);
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
   const [autoApproveTools] = useState(false);
@@ -208,6 +220,8 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       currentAbortController.current = null;
     }
     setQueuedQueries([]);
+    setTaskStage('cancelled');
+    setTaskLabel('Task cancelled by user');
     setIsStreaming(false);
     updateLastAssistant('[CANCELLED: Task interrupted by user via Esc]');
   };
@@ -283,9 +297,14 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
   const runDelegatedStream = async (query: string, routedPrompt = query) => {
     const controller = new AbortController();
+    const startedAt = Date.now();
     currentAbortController.current = controller;
     appendTurn(query);
     setPromptValue('');
+    setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
+    setTaskStartedAt(startedAt);
+    setTaskDurationMs(0);
+    setTaskStage('starting');
     setIsStreaming(true);
 
     let fullText = '';
@@ -303,6 +322,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         // Silent fallback
       }
 
+      setTaskStage('running');
       if (useDaemon) {
         const response = await fetch('http://127.0.0.1:8899/run', {
           method: 'POST',
@@ -335,13 +355,18 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
           orchestrator.recordTurn(query, fullText);
         }
       }
+      if (!controller.signal.aborted) setTaskStage('completed');
     } catch (error: any) {
       if (error.name === 'AbortError' || controller.signal.aborted) {
         fullText += '\n[CANCELLED: Task interrupted by user via Esc]';
+        setTaskStage('cancelled');
+        setTaskLabel('Task cancelled by user');
         updateLastAssistantThrottled(fullText, true);
       } else {
         const message = error instanceof Error ? error.message : String(error);
         fullText = `[VERTEX ERROR] ${message}`;
+        setTaskStage('failed');
+        setTaskLabel(message.length > 72 ? message.slice(0, 69) + '…' : message);
         updateLastAssistantThrottled(fullText, true);
       }
     } finally {
@@ -349,32 +374,46 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         currentAbortController.current = null;
       }
       updateLastAssistantThrottled(fullText, true);
+      setTaskDurationMs(Date.now() - startedAt);
       setIsStreaming(false);
     }
   };
 
   const runImmediateTask = (query: string, task: () => Promise<string>) => {
     const controller = new AbortController();
+    const startedAt = Date.now();
     currentAbortController.current = controller;
     setPromptValue('');
     appendTurn(query);
+    setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
+    setTaskStartedAt(startedAt);
+    setTaskDurationMs(0);
+    setTaskStage('starting');
     setIsStreaming(true);
     void (async () => {
       try {
+        setTaskStage('running');
         const result = await task();
         if (!controller.signal.aborted) {
           updateLastAssistant(result);
           orchestrator.recordTurn(query, result);
+          setTaskStage('completed');
+        } else {
+          setTaskStage('cancelled');
+          setTaskLabel('Task cancelled by user');
         }
       } catch (error: any) {
         if (!controller.signal.aborted) {
           const message = error instanceof Error ? error.message : String(error);
           updateLastAssistant(`[VERTEX ERROR] ${message}`);
+          setTaskStage('failed');
+          setTaskLabel(message.length > 72 ? message.slice(0, 69) + '…' : message);
         }
       } finally {
         if (currentAbortController.current === controller) {
           currentAbortController.current = null;
         }
+        setTaskDurationMs(Date.now() - startedAt);
         setIsStreaming(false);
       }
     })();
@@ -445,7 +484,14 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
     if (lowerQuery === '/' || lowerQuery === 'help' || lowerQuery === '/help') {
       setPromptValue('');
-      appendTurn(query, 'VERTEX Terminal Commands:\n/clear - Clear history\n/health - System status\n/scope - View policy\n/exit - Quit\n/sandbox <cmd> - Run isolated Docker command\n/safe-sandbox <cmd> - Safety research\n/audit [path] - Security audit (CyberAgent)\n/nyx <prompt> - Offensive ops (NyxAgent)\n/phantom <prompt> - Red team kill-chain (PhantomAgent)\n/sentinel <prompt> - Blue team defense (SentinelAgent)\n/recon <prompt> - Reconnaissance (ReconAgent)\n/loot [query|stats|export] - Access LootStore vault\n/attack-graph - View kill-chain graph & pivots\n/search <query> - Web search\n/open <url> - Browse URL\n/goal <objective> - Autonomous execution loop\n/schedule <seconds> <cmd> - Schedule recurring task\n/skill <name> <query> - Science skills');
+      appendTurn(query, [
+        'VERTEX COMMANDS',
+        '',
+        ...COMMANDS.map((cmd) => `${cmd.name.padEnd(16)} ${cmd.desc}`),
+        '',
+        'Tip: type / followed by a few letters to filter commands. Use Tab or ↑/↓ to select, then Enter.',
+        'Use ? to view keyboard shortcuts.'
+      ].join('\n'));
       return;
     }
 
@@ -459,6 +505,24 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
     if (lowerQuery === 'exit' || lowerQuery === 'quit' || lowerQuery === '/exit' || lowerQuery === '/quit') {
       exit();
+      return;
+    }
+
+    if (lowerQuery === '/doctor') {
+      setPromptValue('');
+      appendTurn(query, formatDiagnosticReport(collectDiagnostics()));
+      return;
+    }
+
+    if (lowerQuery === '/init') {
+      setPromptValue('');
+      try {
+        const result = initializeWorkspaceConfig(process.cwd());
+        appendTurn(query, result.message);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendTurn(query, `[INIT ERROR] ${message}`);
+      }
       return;
     }
 
@@ -980,6 +1044,21 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   return (
     <Box flexDirection="column" width="100%">
       <VertexHeader />
+      {history.length === 0 && !isStreaming && (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1} marginY={1}>
+          <Text color="cyan" bold>Welcome to VERTEX</Text>
+          <Text color="white">Your model-agnostic coding and security workspace.</Text>
+          <Box marginTop={1} flexDirection="column">
+            <Text color="gray">Try a task:</Text>
+            <Text color="green">› “Explain this repository and identify its main risks.”</Text>
+            <Text color="green">› “Find a bug, add a regression test, and run the tests.”</Text>
+            <Text color="green">› “/health”  ·  “/scope”  ·  “/help”</Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text color="gray">Tip: use / to discover commands, ? for shortcuts, and Esc to cancel a running task.</Text>
+          </Box>
+        </Box>
+      )}
       <Static items={isStreaming ? history.slice(0, -1) : history}>
         {(h) => (
           <Box key={h.id} marginY={1} flexDirection="column">
@@ -996,7 +1075,22 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         />
       )}
 
-      {isStreaming && <AgentStatusMonitor message="Agent is thinking..." />}
+      {taskStage !== 'idle' && (
+        <AgentStatusMonitor
+          status={taskStage}
+          message={isStreaming
+            ? `${taskLabel}${queuedQueries.length > 0 ? ` · ${queuedQueries.length} queued` : ''} · Esc to cancel`
+            : taskLabel}
+        />
+      )}
+
+      {!isStreaming && taskStage !== 'idle' && taskStartedAt > 0 && (
+        <TaskResultSummary
+          status={taskStage}
+          durationMs={taskDurationMs}
+          output={history.filter((item) => item.role === 'assistant').slice(-1)[0]?.content ?? ''}
+        />
+      )}
 
       {confirmPrompt && (
         <PermissionPrompt 

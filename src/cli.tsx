@@ -2,13 +2,11 @@
 import React from 'react';
 import { render } from 'ink';
 import { Command } from 'commander';
-import App from './ui.js';
 import { ConfigManager } from './core/config.js';
-import { AgentManager } from './core/agent/AgentManager.js';
+import { collectDiagnostics, formatDiagnosticReport } from './core/diagnostics.js';
+import { initializeWorkspaceConfig } from './core/setup.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
-import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
-import { BrowserAgent } from './agents/BrowserAgent.js';
 if (process.env.MOCK_TTY === '1' || process.env.MOCK_TTY === 'true') {
   if (process.stdin) {
     process.stdin.isTTY = true;
@@ -24,8 +22,7 @@ if (process.env.MOCK_TTY === '1' || process.env.MOCK_TTY === 'true') {
   }
 }
 
-ConfigManager.init();
-ensureScopeFile();
+let commandHandled = false;
 
 const program = new Command();
 
@@ -38,8 +35,41 @@ program
   .option('--yes', 'Auto-approve tool confirmations in headless mode')
   .option('--daemon', 'Start the background daemon server');
 
+program.command('doctor')
+  .description('Check the local environment without running agent tasks or printing secrets')
+  .option('--json', 'Output structured diagnostics as JSON')
+  .action((commandOptions: { json?: boolean }) => {
+    commandHandled = true;
+    const report = collectDiagnostics();
+    // --json is also a root option for headless mode, so Commander may store it on the parent.
+    const jsonOutput = Boolean(commandOptions.json || program.opts().json);
+    process.stdout.write(jsonOutput
+      ? `${JSON.stringify(report, null, 2)}\n`
+      : `${formatDiagnosticReport(report)}\n`);
+    if (!report.ok) process.exitCode = 1;
+  });
+
+program.command('init')
+  .description('Create a private .env template in the current workspace without overwriting existing files')
+  .action(() => {
+    commandHandled = true;
+    try {
+      const result = initializeWorkspaceConfig(process.cwd());
+      process.stdout.write(`${result.message}\n`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`[INIT ERROR] ${message}\n`);
+      process.exitCode = 1;
+    }
+  });
+
 program.parse(process.argv);
 const options = program.opts();
+
+if (!commandHandled) {
+  ConfigManager.init();
+  ensureScopeFile();
+}
 
 async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean) {
   process.env.VERTEX_WORKSPACE_ROOT = process.cwd();
@@ -77,6 +107,7 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
       return;
     }
     const confirm = async () => autoApprove ? true : false;
+    const { SafetyResearchSandboxTool } = await import('./tools/DockerSandbox.js');
     const output = await new SafetyResearchSandboxTool().execute({ command, image }, confirm);
     if (asJson) {
       process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
@@ -185,6 +216,7 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
       }
       return;
     }
+    const { BrowserAgent } = await import('./agents/BrowserAgent.js');
     const output = await new BrowserAgent().searchDuckDuckGo(searchQuery);
     if (asJson) {
       process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
@@ -203,6 +235,7 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
       }
       return;
     }
+    const { BrowserAgent } = await import('./agents/BrowserAgent.js');
     const output = await new BrowserAgent().navigateUrl(url);
     if (asJson) {
       process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
@@ -221,6 +254,7 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
       }
       return;
     }
+    const { BrowserAgent } = await import('./agents/BrowserAgent.js');
     const output = await new BrowserAgent().summarizeUrl(url);
     if (asJson) {
       process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
@@ -241,6 +275,7 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
       }
       return;
     }
+    const { BrowserAgent } = await import('./agents/BrowserAgent.js');
     const output = await new BrowserAgent().screenshotUrl(url, filePath);
     if (asJson) {
       process.stdout.write(`${JSON.stringify({ prompt, output }, null, 2)}\n`);
@@ -250,6 +285,7 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
     return;
   }
 
+  const { AgentManager } = await import('./core/agent/AgentManager.js');
   const orchestrator = new AgentManager();
   const confirm = async (msg: string) => autoApprove ? true : false;
   const stream = orchestrator.delegateTask(routedPrompt, confirm);
@@ -266,8 +302,21 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
 }
 
 if (options.daemon) {
-  import('./core/daemon.js').then(({ startDaemon }) => {
+  import('./core/daemon.js').then(({ startDaemon, stopDaemon }) => {
     startDaemon();
+    let shuttingDown = false;
+    const shutdown = () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      stopDaemon().then(() => {
+        process.exitCode = 0;
+      }).catch((error) => {
+        process.stderr.write(`[DAEMON STOP ERROR]: ${error instanceof Error ? error.message : String(error)}\n`);
+        process.exitCode = 1;
+      });
+    };
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
   }).catch((error) => {
     process.stderr.write(`[DAEMON START ERROR]: ${error.message}\n`);
     process.exitCode = 1;
@@ -277,9 +326,15 @@ if (options.daemon) {
     process.stderr.write(`[HEADLESS ERROR]: ${error.message}\n`);
     process.exitCode = 1;
   });
+} else if (commandHandled) {
+  // The init/doctor subcommand completed during Commander parsing.
 } else {
-  const { waitUntilExit } = render(<App />);
-  waitUntilExit().then(() => {
-    // Graceful shutdown
+  import('./ui.js').then(({ default: App }) => {
+    const { waitUntilExit } = render(<App />);
+    return waitUntilExit();
+  }).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[UI START ERROR]: ${message}\\n`);
+    process.exitCode = 1;
   });
 }

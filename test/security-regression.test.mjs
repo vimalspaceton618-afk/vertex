@@ -1,0 +1,632 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import http from 'node:http';
+import net from 'node:net';
+import { EventEmitter } from 'node:events';
+
+import { validateRemoteTarget, AutoExecutorTool } from '../dist/tools/AutoExecutor.js';
+import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
+import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
+import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer, createDaemonAbortController, stopDaemon } from '../dist/core/daemon.js';
+import { awaitWithAbort, iterateWithAbort, waitForRetryDelay } from '../dist/core/agent/BaseAgent.js';
+import { toGraphQLStringLiteral } from '../dist/tools/CloudCompute.js';
+import { TcpScanTool, HttpProbeTool } from '../dist/tools/NetworkRecon.js';
+
+test('remote SSH target validation rejects shell metacharacters in host and username', () => {
+  assert.match(validateRemoteTarget('example.com;whoami', 'vimal') ?? '', /Invalid SSH host/);
+  assert.match(validateRemoteTarget('example.com', 'vimal;whoami') ?? '', /Invalid SSH username/);
+  assert.match(validateRemoteTarget('-oProxyCommand=evil', 'vimal') ?? '', /Invalid SSH host/);
+});
+
+test('remote SSH target validation accepts ordinary DNS names and IP addresses', () => {
+  assert.equal(validateRemoteTarget('example.com', 'deploy'), null);
+  assert.equal(validateRemoteTarget('192.168.1.20', 'deploy'), null);
+  assert.equal(validateRemoteTarget('[::1]', 'deploy'), null);
+});
+
+test('unrestricted lab mode does not override explicit blocked targets', () => {
+  const previousRoot = process.env.VERTEX_WORKSPACE_ROOT;
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-policy-test-'));
+  try {
+    process.env.VERTEX_WORKSPACE_ROOT = tempRoot;
+    fs.mkdirSync(path.join(tempRoot, '.vertex'), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, '.vertex', 'scope.json'), JSON.stringify({
+      mode: 'unrestricted_lab',
+      localOnly: false,
+      allowedDomains: [],
+      allowedCidrs: [],
+      blockedTargets: ['example.com'],
+      allowedOffensiveTools: []
+    }));
+
+    const blocked = evaluateToolPolicy({
+      toolName: 'test_tool',
+      riskLevel: 'read',
+      targets: ['api.example.com']
+    });
+    assert.equal(blocked.allowed, false);
+    assert.match(blocked.reason, /blocked by scope policy/i);
+
+    const allowed = evaluateToolPolicy({
+      toolName: 'test_tool',
+      riskLevel: 'read',
+      targets: ['safe.example.net']
+    });
+    assert.equal(allowed.allowed, true);
+    assert.equal(allowed.requiresConfirmation, false);
+  } finally {
+    if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
+    else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('workspace path resolver rejects traversal and symlink escapes', () => {
+  const previousRoot = process.env.VERTEX_WORKSPACE_ROOT;
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-workspace-test-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-outside-test-'));
+  try {
+    process.env.VERTEX_WORKSPACE_ROOT = workspace;
+    fs.writeFileSync(path.join(outside, 'secret.txt'), 'outside workspace');
+    fs.symlinkSync(outside, path.join(workspace, 'outside-link'), 'dir');
+
+    assert.throws(() => resolveInsideWorkspace('../outside/secret.txt'), /escapes workspace root/i);
+    assert.throws(() => resolveInsideWorkspace(path.join(outside, 'secret.txt')), /escapes workspace root/i);
+    assert.throws(() => resolveInsideWorkspace('outside-link/secret.txt'), /escapes workspace root/i);
+    assert.throws(() => resolveInsideWorkspace('outside-link/not-created/nested/file.txt'), /escapes workspace root/i);
+  } finally {
+    if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
+    else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
+    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('daemon only accepts browser origins on loopback hosts', () => {
+  assert.equal(isAllowedDaemonOrigin('http://127.0.0.1:8899', 8899), true);
+  assert.equal(isAllowedDaemonOrigin('http://localhost:8899', 8899), true);
+  assert.equal(isAllowedDaemonOrigin('https://example.com', 8899), false);
+  assert.equal(isAllowedDaemonOrigin('http://localhost:5173', 8899), false);
+  assert.equal(isAllowedDaemonOrigin('null', 8899), false);
+  assert.equal(isAllowedDaemonOrigin('http://localhost.evil.example:8899', 8899), false);
+});
+
+test('daemon payload validation rejects non-object JSON values and malformed prompts', () => {
+  for (const payload of [null, undefined, [], 'prompt', 7, true]) {
+    const result = validateDaemonPayload(payload);
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 400);
+  }
+
+  for (const prompt of ['', '   ', '\n\t', 7, null, {}, []]) {
+    const result = validateDaemonPayload({ prompt });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 400);
+  }
+});
+
+test('daemon payload validation enforces the prompt length boundary', () => {
+  const atLimit = validateDaemonPayload({ prompt: 'x'.repeat(MAX_DAEMON_PROMPT_CHARS) });
+  assert.equal(atLimit.ok, true);
+  if (atLimit.ok) assert.equal(atLimit.prompt.length, MAX_DAEMON_PROMPT_CHARS);
+
+  const overLimit = validateDaemonPayload({ prompt: 'x'.repeat(MAX_DAEMON_PROMPT_CHARS + 1) });
+  assert.equal(overLimit.ok, false);
+  if (!overLimit.ok) {
+    assert.equal(overLimit.status, 413);
+    assert.match(overLimit.message, /character limit/);
+  }
+});
+
+test('daemon payload validation never promotes request fields into approval policy', () => {
+  const result = validateDaemonPayload({
+    prompt: 'inspect the workspace',
+    autoApprove: true,
+    confirm: true,
+    approval: 'granted'
+  });
+  assert.deepEqual(result, { ok: true, prompt: 'inspect the workspace' });
+  assert.equal(Object.hasOwn(result, 'autoApprove'), false);
+});
+
+test('GraphQL string literal encoding preserves content without raw line breaks', () => {
+  const input = 'image"\\nmutation { admin }\\\\';
+  const encoded = toGraphQLStringLiteral(input);
+  assert.equal(JSON.parse(encoded), input);
+  assert.equal(encoded.includes('\n'), false);
+});
+
+test('AutoExecutor terminates a host child process when its signal aborts', async () => {
+  const previousRoot = process.env.VERTEX_WORKSPACE_ROOT;
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-executor-cancel-'));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 100);
+  try {
+    fs.mkdirSync(path.join(workspace, '.vertex'), { recursive: true });
+    fs.writeFileSync(path.join(workspace, '.vertex', 'scope.json'), JSON.stringify({
+      mode: 'unrestricted_lab',
+      localOnly: false,
+      allowedDomains: [],
+      allowedCidrs: [],
+      blockedTargets: [],
+      allowedOffensiveTools: []
+    }));
+    process.env.VERTEX_WORKSPACE_ROOT = workspace;
+
+    const startedAt = Date.now();
+    const result = await new AutoExecutorTool().execute(
+      {
+        generatedCommand: 'node -e "setTimeout(() => {}, 10000)"',
+        executionTarget: 'host'
+      },
+      async () => true,
+      controller.signal
+    );
+    assert.equal(result, '[HOST EXEC CANCELLED]');
+    assert.ok(Date.now() - startedAt < 3000, 'cancelled child process should not run to its full timeout');
+  } finally {
+    clearTimeout(timer);
+    if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
+    else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('daemon abort controller cancels work on client disconnect and cleans up listeners', () => {
+  const request = new EventEmitter();
+  const response = new EventEmitter();
+  response.writableFinished = false;
+
+  const { controller, cleanup } = createDaemonAbortController(request, response);
+  assert.equal(controller.signal.aborted, false);
+  response.emit('close');
+  assert.equal(controller.signal.aborted, true);
+  cleanup();
+  assert.equal(request.listenerCount('aborted'), 0);
+  assert.equal(response.listenerCount('close'), 0);
+});
+
+test('agent orchestration stops waiting on an operation after abort', async () => {
+  const controller = new AbortController();
+  let timer;
+  const operation = new Promise((resolve) => {
+    timer = setTimeout(() => resolve('late result'), 60_000);
+  });
+  const waiting = awaitWithAbort(operation, controller.signal);
+  controller.abort();
+  await assert.rejects(waiting, /Operation aborted/);
+  clearTimeout(timer);
+});
+
+test('agent tool stream stops waiting for a stalled next item after abort', async () => {
+  const controller = new AbortController();
+  let returnCalled = false;
+  const stream = {
+    [Symbol.asyncIterator]() {
+      return {
+        next: () => new Promise(() => {}),
+        return: async () => {
+          returnCalled = true;
+          return { value: undefined, done: true };
+        }
+      };
+    }
+  };
+  const consuming = (async () => {
+    for await (const _chunk of iterateWithAbort(stream, controller.signal)) {
+      // No chunks are emitted by this deliberately stalled stream.
+    }
+  })();
+  controller.abort();
+  let timer;
+  try {
+    await Promise.race([
+      consuming,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Stream consumption did not stop after abort')), 1000);
+      })
+    ]);
+    assert.equal(returnCalled, true);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+});
+
+test('agent retry delay is interrupted promptly when its signal aborts', async () => {
+  const controller = new AbortController();
+  const waiting = waitForRetryDelay(60_000, controller.signal);
+  controller.abort();
+  assert.equal(await waiting, false);
+});
+
+test('agent retry delay completes normally and handles an already-aborted signal', async () => {
+  assert.equal(await waitForRetryDelay(1), true);
+
+  const controller = new AbortController();
+  controller.abort();
+  assert.equal(await waitForRetryDelay(60_000, controller.signal), false);
+});
+
+test('daemon abort controller observes a request already aborted before setup', () => {
+  const request = new EventEmitter();
+  const response = new EventEmitter();
+  request.aborted = true;
+  response.writableFinished = false;
+
+  const { controller, cleanup } = createDaemonAbortController(request, response);
+  assert.equal(controller.signal.aborted, true);
+  cleanup();
+  assert.equal(request.listenerCount('aborted'), 0);
+  assert.equal(response.listenerCount('close'), 0);
+});
+
+test('daemon abort controller does not cancel completed responses', () => {
+  const request = new EventEmitter();
+  const response = new EventEmitter();
+  response.writableFinished = true;
+
+  const { controller, cleanup } = createDaemonAbortController(request, response);
+  response.emit('close');
+  request.emit('aborted');
+  assert.equal(controller.signal.aborted, false);
+  cleanup();
+});
+
+test('daemon HTTP boundary rejects malformed, oversized, wrong-type, and cross-origin requests', async () => {
+  if (daemonServer.listening) throw new Error('Daemon server unexpectedly already listening');
+
+  await new Promise((resolve, reject) => {
+    daemonServer.once('error', reject);
+    daemonServer.listen(0, '127.0.0.1', resolve);
+  });
+
+  const address = daemonServer.address();
+  assert.ok(address && typeof address === 'object');
+  const port = address.port;
+
+  const request = (options, body = '') => new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1',
+      port,
+      path: '/run',
+      method: 'POST',
+      ...options
+    }, (res) => {
+      let responseBody = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { responseBody += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, body: responseBody }));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+
+  try {
+    const wrongType = await request({ headers: { 'Content-Type': 'text/plain' } }, '{}');
+    assert.equal(wrongType.status, 415);
+
+    const malformed = await request({ headers: { 'Content-Type': 'application/json' } }, '{');
+    assert.equal(malformed.status, 400);
+
+    const invalidPrompt = await request({ headers: { 'Content-Type': 'application/json' } }, JSON.stringify({ prompt: '   ' }));
+    assert.equal(invalidPrompt.status, 400);
+
+    const oversized = await request(
+      { headers: { 'Content-Type': 'application/json' } },
+      JSON.stringify({ prompt: 'x'.repeat(70 * 1024) })
+    );
+    assert.equal(oversized.status, 413);
+
+    const crossOrigin = await request({
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://attacker.example'
+      }
+    }, JSON.stringify({ prompt: 'must not run' }));
+    assert.equal(crossOrigin.status, 403);
+  } finally {
+    await new Promise((resolve, reject) => daemonServer.close((error) => error ? reject(error) : resolve()));
+  }
+});
+
+
+
+test('daemon client disconnect aborts an active OpenAI-compatible streaming request', async () => {
+  if (daemonServer.listening) throw new Error('Daemon server unexpectedly already listening');
+
+  let resolveUpstreamClose;
+  const upstreamClosed = new Promise((resolve) => {
+    resolveUpstreamClose = resolve;
+  });
+  const modelServer = http.createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      response.on('close', () => {
+        if (!response.writableEnded) resolveUpstreamClose();
+      });
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      });
+      response.flushHeaders();
+      response.write('data: ' + JSON.stringify({
+        id: 'chatcmpl-cancellation-test',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'mock-cancel-test',
+        choices: [{ index: 0, delta: { role: 'assistant', content: 'working' }, finish_reason: null }]
+      }) + '\n\n');
+    });
+  });
+
+  const envKeys = ['OPENAI_BASE_URL', 'OPENAI_API_KEY', 'AI_MODEL', 'BRAIN_MODE', 'BRAIN_ROUTING_MAP'];
+  const oldEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  let clientRequest;
+  let waitTimer;
+  try {
+    await new Promise((resolve, reject) => {
+      modelServer.once('error', reject);
+      modelServer.listen(0, '127.0.0.1', resolve);
+    });
+    const modelAddress = modelServer.address();
+    assert.ok(modelAddress && typeof modelAddress === 'object');
+
+    process.env.OPENAI_BASE_URL = `http://127.0.0.1:${modelAddress.port}/v1`;
+    process.env.OPENAI_API_KEY = 'test-only-cancellation-key';
+    process.env.AI_MODEL = 'mock-cancel-test';
+    process.env.BRAIN_MODE = 'cloud';
+    delete process.env.BRAIN_ROUTING_MAP;
+
+    await new Promise((resolve, reject) => {
+      daemonServer.once('error', reject);
+      daemonServer.listen(0, '127.0.0.1', resolve);
+    });
+    const daemonAddress = daemonServer.address();
+    assert.ok(daemonAddress && typeof daemonAddress === 'object');
+
+    const firstDownstreamChunk = new Promise((resolve, reject) => {
+      let receivedChunk = false;
+      clientRequest = http.request({
+        host: '127.0.0.1',
+        port: daemonAddress.port,
+        path: '/run',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }, (response) => {
+        response.on('data', () => {
+          if (receivedChunk) return;
+          receivedChunk = true;
+          clientRequest.destroy();
+          resolve();
+        });
+      });
+      clientRequest.on('error', (error) => {
+        if (!receivedChunk) reject(error);
+      });
+      clientRequest.end(JSON.stringify({ prompt: 'Say one short greeting.' }));
+    });
+
+    await Promise.race([
+      firstDownstreamChunk,
+      new Promise((_, reject) => {
+        waitTimer = setTimeout(() => reject(new Error('Daemon did not begin streaming within 3 seconds')), 3000);
+      })
+    ]);
+    clearTimeout(waitTimer);
+    waitTimer = undefined;
+
+    await Promise.race([
+      upstreamClosed,
+      new Promise((_, reject) => {
+        waitTimer = setTimeout(() => reject(new Error('Client disconnect did not abort the upstream model stream')), 3000);
+      })
+    ]);
+  } finally {
+    if (waitTimer) clearTimeout(waitTimer);
+    clientRequest?.destroy();
+    for (const key of envKeys) {
+      if (oldEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = oldEnv[key];
+    }
+    if (daemonServer.listening) {
+      await new Promise((resolve, reject) => daemonServer.close((error) => error ? reject(error) : resolve()));
+    }
+    if (modelServer.listening) {
+      await new Promise((resolve, reject) => modelServer.close((error) => error ? reject(error) : resolve()));
+    }
+  }
+});
+
+
+test('stopDaemon closes an idle listener and can be called repeatedly', async () => {
+  if (daemonServer.listening) throw new Error('Daemon server unexpectedly already listening');
+  await new Promise((resolve, reject) => {
+    daemonServer.once('error', reject);
+    daemonServer.listen(0, '127.0.0.1', resolve);
+  });
+  assert.equal(daemonServer.listening, true);
+  await stopDaemon();
+  assert.equal(daemonServer.listening, false);
+  await stopDaemon();
+  assert.equal(daemonServer.listening, false);
+});
+
+
+test('stopDaemon aborts active model work and waits for request cleanup', async () => {
+  if (daemonServer.listening) throw new Error('Daemon server unexpectedly already listening');
+
+  let resolveModelRequest;
+  let resolveUpstreamClose;
+  const modelRequestReceived = new Promise((resolve) => { resolveModelRequest = resolve; });
+  const upstreamClosed = new Promise((resolve) => { resolveUpstreamClose = resolve; });
+  const modelServer = http.createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      resolveModelRequest();
+      response.on('close', () => {
+        if (!response.writableEnded) resolveUpstreamClose();
+      });
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      });
+      response.flushHeaders();
+      response.write('data: ' + JSON.stringify({
+        id: 'chatcmpl-shutdown-test',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'mock-shutdown-test',
+        choices: [{ index: 0, delta: { role: 'assistant', content: 'working' }, finish_reason: null }]
+      }) + '\n\n');
+    });
+  });
+
+  const envKeys = ['OPENAI_BASE_URL', 'OPENAI_API_KEY', 'AI_MODEL', 'BRAIN_MODE', 'BRAIN_ROUTING_MAP'];
+  const oldEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  let clientRequest;
+  let clientResponseEnded;
+  const within = (promise, label) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label)), 3000);
+    Promise.resolve(promise).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); }
+    );
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      modelServer.once('error', reject);
+      modelServer.listen(0, '127.0.0.1', resolve);
+    });
+    const modelAddress = modelServer.address();
+    assert.ok(modelAddress && typeof modelAddress === 'object');
+    process.env.OPENAI_BASE_URL = `http://127.0.0.1:${modelAddress.port}/v1`;
+    process.env.OPENAI_API_KEY = 'test-only-shutdown-key';
+    process.env.AI_MODEL = 'mock-shutdown-test';
+    process.env.BRAIN_MODE = 'cloud';
+    delete process.env.BRAIN_ROUTING_MAP;
+
+    await new Promise((resolve, reject) => {
+      daemonServer.once('error', reject);
+      daemonServer.listen(0, '127.0.0.1', resolve);
+    });
+    const daemonAddress = daemonServer.address();
+    assert.ok(daemonAddress && typeof daemonAddress === 'object');
+
+    const responseEnded = new Promise((resolve, reject) => {
+      clientRequest = http.request({
+        host: '127.0.0.1',
+        port: daemonAddress.port,
+        path: '/run',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }, (response) => {
+        response.on('data', () => {});
+        response.on('end', resolve);
+        response.on('error', reject);
+      });
+      clientRequest.on('error', reject);
+      clientRequest.end(JSON.stringify({ prompt: 'Say one short greeting.' }));
+    });
+    clientResponseEnded = responseEnded;
+
+    await within(modelRequestReceived, 'Daemon did not start model work within 3 seconds');
+    await within(stopDaemon(), 'Daemon did not close cleanly after aborting active work');
+    await within(upstreamClosed, 'Shutdown did not abort the upstream model stream');
+    await within(clientResponseEnded, 'Daemon response did not finish during shutdown');
+    assert.equal(daemonServer.listening, false);
+  } finally {
+    clientRequest?.destroy();
+    for (const key of envKeys) {
+      if (oldEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = oldEnv[key];
+    }
+    if (daemonServer.listening) await stopDaemon();
+    if (modelServer.listening) {
+      await new Promise((resolve, reject) => modelServer.close((error) => error ? reject(error) : resolve()));
+    }
+  }
+});
+
+
+test('TCP scan closes active sockets promptly when the task aborts', async () => {
+  let resolveAccepted;
+  const accepted = new Promise((resolve) => { resolveAccepted = resolve; });
+  const server = net.createServer(() => resolveAccepted());
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const controller = new AbortController();
+  let timer;
+  try {
+    const scan = new TcpScanTool().execute(
+      { target: '127.0.0.1', ports: String(address.port), timeout: 5000, concurrency: 1 },
+      async () => true,
+      controller.signal
+    );
+    await Promise.race([
+      accepted,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('TCP scanner did not connect to the local test server')), 1500); })
+    ]);
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+    controller.abort();
+    const result = await Promise.race([
+      scan,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('TCP scan did not stop after abort')), 1000); })
+    ]);
+    assert.equal(result, '[TCP SCAN CANCELLED]');
+  } finally {
+    if (timer) clearTimeout(timer);
+    controller.abort();
+    await new Promise((resolve) => server.close(() => resolve()));
+  }
+});
+
+test('HTTP probe aborts a pending local HTTP request promptly', async () => {
+  let resolveReceived;
+  const received = new Promise((resolve) => { resolveReceived = resolve; });
+  const server = http.createServer((request, _response) => {
+    request.resume();
+    request.on('end', resolveReceived);
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const controller = new AbortController();
+  let timer;
+  try {
+    const probing = new HttpProbeTool().execute(
+      { url: `http://127.0.0.1:${address.port}/hang` },
+      async () => true,
+      controller.signal
+    );
+    await Promise.race([
+      received,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('HTTP probe request did not reach local test server')), 1500); })
+    ]);
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+    controller.abort();
+    const result = await Promise.race([
+      probing,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('HTTP probe did not stop after abort')), 1000); })
+    ]);
+    assert.equal(result, '[HTTP PROBE CANCELLED]');
+  } finally {
+    if (timer) clearTimeout(timer);
+    controller.abort();
+    await new Promise((resolve) => server.close(() => resolve()));
+  }
+});

@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "start": "node ./dist/cli.js"
+    "start": "node ./dist/cli.js",
+    "test": "npm run build && node --test test/*.test.mjs && node --test test/ux-regression.test.mjs"
   },
   "repository": {
     "type": "git",
@@ -23,15 +24,16 @@
   },
   "homepage": "https://github.com/vimalspaceton618-afk/vertex#readme",
   "dependencies": {
+    "@types/ink-spinner": "^3.0.5",
     "chalk": "^5.6.2",
     "commander": "^14.0.3",
-    "dockerode": "^4.0.10",
+    "dockerode": "^5.0.1",
     "dotenv": "^17.4.1",
     "ink": "^7.0.0",
     "ink-spinner": "^5.0.0",
     "log-update": "^8.0.0",
     "openai": "^6.34.0",
-    "puppeteer": "^24.40.0",
+    "puppeteer": "^25.15.0",
     "react": "^19.2.5"
   },
   "devDependencies": {

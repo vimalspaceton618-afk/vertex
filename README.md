@@ -65,27 +65,28 @@ vertex
 
 ## Quickstart
 
-1. Copy environment template and edit:
+1. From the project/workspace directory where you want VERTEX to work, create a local configuration template:
 ```bash
-cp .env.example .env
-# Edit .env -> add OPENAI_API_KEY and other vars
+vertex init
 ```
+This creates `.env` only if it does not already exist, uses user-only file permissions on POSIX systems, and leaves API-key fields empty. It never overwrites an existing `.env`.
 
-Sample .env:
-```env
-OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=https://openrouter.ai/api/v1
-AI_MODEL=google/gemma-4-26b-a4b-it:free
-VERTEX_WORKSPACE_ROOT=
-SHELL_TIMEOUT_MS=60000
+2. Edit `.env` and set the provider credentials and optional model/endpoint for your environment. **Never commit `.env` or paste API keys into issues, logs, or chat.**
+
+3. Check the environment without starting an agent task:
+```bash
+vertex doctor
+# Machine-readable output:
+vertex doctor --json
 ```
+The doctor checks Node.js, workspace access, configuration-file validity/permissions, provider configuration, Git, and optional Docker availability. It does not print secret values or launch containers/agent tasks.
 
-2. Start VERTEX in a project directory:
+4. Start VERTEX in that workspace:
 ```bash
 vertex
 ```
 
-3. Example session (interactive):
+Example session (interactive):
 - Prompt: "Audit this repo for exposed secrets"
 - VERTEX will run `env_secrets_scan`, present findings, and suggest remediation steps.
 
@@ -169,13 +170,16 @@ Responsible disclosure:
 
 | Variable | Default | Description |
 |---|---:|---|
-| OPENAI_API_KEY | — | API key for LLM provider |
-| OPENAI_BASE_URL | — | Provider endpoint (OpenAI, OpenRouter, local agent) |
-| AI_MODEL | gpt-4o | LLM identifier |
-| VERTEX_WORKSPACE_ROOT | cwd() | Base directory for workspace operations |
+| OPENAI_API_KEY | empty | API key for a cloud LLM provider; keep it private |
+| OPENAI_BASE_URL | empty | Optional OpenAI-compatible cloud provider endpoint |
+| AI_MODEL | runtime default | Optional model identifier |
+| BRAIN_MODE | cloud | Provider mode: `cloud`, `local`, or `offline` |
+| LOCAL_BASE_URL | `http://127.0.0.1:11434/v1` in global config | Local OpenAI-compatible endpoint |
+| LOCAL_MODEL | empty | Model identifier for local/offline mode |
+| WORKSPACE_ROOT | empty | Optional workspace restriction; blank uses the current workspace |
 | SHELL_TIMEOUT_MS | 60000 | Subprocess execution timeout in ms |
 
-Provide a complete `.env.example` in the repo with commented descriptions.
+Run `vertex init` to create a private, workspace-local `.env` template. It intentionally leaves credential fields empty and never overwrites an existing file. Do not commit `.env`; the checked-in ignore rules exclude it.
 
 ---
 
@@ -190,6 +194,8 @@ Use the interactive slash command interface:
 - `/summarize-url <url>` — Extract & summarize page content
 - `/screenshot-url <url>` — Capture a full-page screenshot
 - `/health` — Inspect runtime status
+- `/doctor` — Check environment/configuration safely
+- `/init` — Create a private local `.env` template without overwriting an existing file
 - `/help` — Display command menu
 - `/exit` — Terminate session
 

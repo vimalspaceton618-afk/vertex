@@ -110,6 +110,105 @@ function getBrainCandidates(agentName: string): BrainCandidate[] {
     return [cloud, local];
 }
 
+/**
+ * Wait for a retry window without keeping cancelled work asleep.
+ * Returns false when the caller's signal aborts before the delay finishes.
+ */
+export function waitForRetryDelay(ms: number, signal?: AbortSignal): Promise<boolean> {
+    return new Promise((resolve) => {
+        if (signal?.aborted) {
+            resolve(false);
+            return;
+        }
+
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout>;
+        const onAbort = () => finish(false);
+        const finish = (completed: boolean) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            signal?.removeEventListener('abort', onAbort);
+            resolve(completed);
+        };
+
+        timer = setTimeout(() => finish(true), ms);
+        signal?.addEventListener('abort', onAbort, { once: true });
+        if (signal?.aborted) finish(false);
+    });
+}
+
+/**
+ * Let the orchestration loop stop waiting when a task is cancelled.
+ * The underlying operation still needs to honor the same signal to stop its own work.
+ */
+export function awaitWithAbort<T>(operation: PromiseLike<T> | T, signal?: AbortSignal): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(new Error('Operation aborted.'));
+            return;
+        }
+
+        let settled = false;
+        const cleanup = () => signal?.removeEventListener('abort', onAbort);
+        const onAbort = () => {
+            if (settled) return;
+            settled = true;
+            cleanup();
+            reject(new Error('Operation aborted.'));
+        };
+
+        signal?.addEventListener('abort', onAbort, { once: true });
+        Promise.resolve(operation).then(
+            (value) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(value);
+            },
+            (error) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                reject(error);
+            }
+        );
+        if (signal?.aborted) onAbort();
+    });
+}
+
+/**
+ * Consume an async tool stream without waiting indefinitely for its next item
+ * after cancellation. The producer should also honor the provided signal.
+ */
+export async function* iterateWithAbort<T>(
+    iterable: AsyncIterable<T>,
+    signal?: AbortSignal
+): AsyncGenerator<T> {
+    const iterator = iterable[Symbol.asyncIterator]();
+    let completed = false;
+    try {
+        while (!signal?.aborted) {
+            let result: IteratorResult<T>;
+            try {
+                result = await awaitWithAbort(iterator.next(), signal);
+            } catch (error) {
+                if (signal?.aborted) break;
+                throw error;
+            }
+            if (result.done) {
+                completed = true;
+                break;
+            }
+            yield result.value;
+        }
+    } finally {
+        if (!completed && typeof iterator.return === 'function') {
+            void Promise.resolve(iterator.return()).catch(() => undefined);
+        }
+    }
+}
+
 export abstract class BaseAgent {
     protected history: Message[] = [];
     protected registry = new ToolRegistry();
@@ -195,7 +294,7 @@ export abstract class BaseAgent {
                                 stream: true,
                                 max_tokens: process.env.MAX_TOKENS ? parseInt(process.env.MAX_TOKENS) : undefined,
                                 ...toolsConfig
-                            });
+                            }, { signal });
                             break;
                         } catch (providerError: any) {
                             const formatted = formatProviderFailure(candidate, providerError);
@@ -244,7 +343,8 @@ export abstract class BaseAgent {
                         retryAttempt++;
                         const backoffMs = Math.min(2000 * Math.pow(1.5, retryAttempt), 30000);
                         yield `\n[RATE LIMIT HIT]: Retrying in ${Math.round(backoffMs/1000)}s (Attempt ${retryAttempt}/${MAX_RETRIES})...\n`;
-                        await new Promise(r => setTimeout(r, backoffMs));
+                        const delayCompleted = await waitForRetryDelay(backoffMs, signal);
+                        if (!delayCompleted || signal?.aborted) break;
                         currentResponse = "";
                         currentToolCalls = {};
                     } else {
@@ -280,10 +380,10 @@ export abstract class BaseAgent {
                         }
                         try {
                             const args = JSON.parse(toolCall.function.arguments);
-                            const executionResult = await tool.execute(args, requestConfirmation, signal);
+                            const executionResult = await awaitWithAbort<string | AsyncGenerator<string, string, unknown>>(tool.execute(args, requestConfirmation, signal), signal);
                             let resultStr = '';
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
-                                for await (const chunk of executionResult as any) {
+                                for await (const chunk of iterateWithAbort(executionResult as AsyncIterable<string>, signal)) {
                                     resultStr += chunk;
                                 }
                             } else {
@@ -296,7 +396,9 @@ export abstract class BaseAgent {
                     });
 
                     const results = await Promise.allSettled(toolExecPromises);
+                    if (signal?.aborted) break;
                     for (const res of results) {
+                        if (signal?.aborted) break;
                         if (res.status === 'fulfilled') {
                             const { id, name, resultStr } = res.value;
                             this.history.push({ role: 'tool', tool_call_id: id, name, content: resultStr });
@@ -314,10 +416,10 @@ export abstract class BaseAgent {
                     if (tool) {
                         try {
                             const args = JSON.parse(toolCall.function.arguments);
-                            const executionResult = await tool.execute(args, requestConfirmation, signal);
+                            const executionResult = await awaitWithAbort<string | AsyncGenerator<string, string, unknown>>(tool.execute(args, requestConfirmation, signal), signal);
+                            if (signal?.aborted) break;
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
-                                for await (const chunk of executionResult as any) {
-                                    if (signal?.aborted) break;
+                                for await (const chunk of iterateWithAbort(executionResult as AsyncIterable<string>, signal)) {
                                     yield chunk;
                                     resultStr += chunk;
                                 }
@@ -327,6 +429,7 @@ export abstract class BaseAgent {
                         } catch (e: any) {
                             resultStr = `[TOOL PARSE OR EXECUTION ERROR]: ${e.message}`;
                         }
+                        if (signal?.aborted) break;
                     } else {
                         resultStr = `[ERROR]: Tool ${toolName} not found.`;
                     }

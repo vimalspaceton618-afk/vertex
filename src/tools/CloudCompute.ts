@@ -1,12 +1,18 @@
 import { Tool } from './Tool.js';
 import { SharedContext } from '../core/agent/SharedContext.js';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+/** Encode arbitrary data as a GraphQL string literal (JSON string escapes are GraphQL-compatible). */
+export function toGraphQLStringLiteral(value: unknown): string {
+    return JSON.stringify(String(value));
+}
 
 // ---------------------------------------------------------------------------
 // Provider Abstraction
@@ -143,6 +149,22 @@ class RunPodProvider implements GpuProvider {
     }
 
     async provision(config: JobConfig): Promise<InstanceHandle> {
+        // These values are interpolated as GraphQL numeric literals; reject invalid
+        // runtime inputs rather than relying on TypeScript types at the API boundary.
+        if (!Number.isInteger(config.diskGb) || config.diskGb < 1 || config.diskGb > 10000) {
+            throw new Error('diskGb must be an integer between 1 and 10000.');
+        }
+        if (!Array.isArray(config.ports) || config.ports.some((port) => !Number.isInteger(port) || port < 1 || port > 65535)) {
+            throw new Error('ports must be an array of integers between 1 and 65535.');
+        }
+        if (!Array.isArray(config.args) || config.args.some((arg) => typeof arg !== 'string')) {
+            throw new Error('args must be an array of strings.');
+        }
+        if (!config.env || typeof config.env !== 'object' || Array.isArray(config.env) ||
+            Object.entries(config.env).some(([key, value]) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || typeof value !== 'string')) {
+            throw new Error('env must contain valid environment variable names and string values.');
+        }
+
         const gpuMap: Record<string, string> = {
             'a100': 'NVIDIA A100 80GB PCIe',
             'a100-80': 'NVIDIA A100 80GB PCIe',
@@ -171,17 +193,17 @@ class RunPodProvider implements GpuProvider {
         const mutation = `
             mutation {
                 podFindAndDeployOnDemand(input: {
-                    name: "vertex-gpu-${Date.now()}"
-                    imageName: "${config.image}"
-                    gpuTypeId: "${gpuTypeId}"
+                    name: ${toGraphQLStringLiteral(`vertex-gpu-${Date.now()}`)}
+                    imageName: ${toGraphQLStringLiteral(config.image)}
+                    gpuTypeId: ${toGraphQLStringLiteral(gpuTypeId)}
                     gpuCount: 1
                     volumeInGb: ${config.diskGb}
                     containerDiskInGb: ${Math.max(20, config.diskGb)}
                     minVcpuCount: 4
                     minMemoryInGb: 16
-                    ports: "${config.ports.map(p => `${p}/http`).join(',')}"
-                    env: [${envArray.map(e => `{key: "${e.key}", value: "${e.value}"}`).join(',')}]
-                    dockerArgs: "${config.args.join(' ')}"
+                    ports: ${toGraphQLStringLiteral(config.ports.map(p => `${p}/http`).join(','))}
+                    env: [${envArray.map(e => `{key: ${toGraphQLStringLiteral(e.key)}, value: ${toGraphQLStringLiteral(e.value)}}`).join(',')}]
+                    dockerArgs: ${toGraphQLStringLiteral(config.args.join(' '))}
                 }) {
                     id
                     imageName
@@ -206,7 +228,7 @@ class RunPodProvider implements GpuProvider {
     async destroy(handle: InstanceHandle): Promise<string> {
         const mutation = `
             mutation {
-                podTerminate(input: { podId: "${handle.instanceId}" })
+                podTerminate(input: { podId: ${toGraphQLStringLiteral(handle.instanceId)} })
             }
         `;
         await this.graphql(mutation);
@@ -217,7 +239,7 @@ class RunPodProvider implements GpuProvider {
     async status(handle: InstanceHandle): Promise<InstanceStatus> {
         const query = `
             query {
-                pod(input: { podId: "${handle.instanceId}" }) {
+                pod(input: { podId: ${toGraphQLStringLiteral(handle.instanceId)} }) {
                     id
                     desiredStatus
                     runtime { uptimeInSeconds gpus { gpuUtilPerc memoryUtilPerc } }
@@ -885,10 +907,24 @@ export class GpuSshTool extends Tool {
         const approved = await requestConfirmation(`[GPU SSH] Run on ${handle.ip}:\n  > ${args.command}`);
         if (!approved) return '[USER OVERRIDE]: SSH command cancelled.';
 
-        const sshCmd = `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p ${handle.sshPort || 22} root@${handle.ip} "${args.command.replace(/"/g, '\\"')}"`;
+        if (!/^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])$/.test(handle.ip)) {
+            return '[SSH ERROR]: Invalid host address for this instance.';
+        }
+        const port = handle.sshPort ?? 22;
+        if (!Number.isInteger(port) || port < 1 || port > 65535) {
+            return '[SSH ERROR]: Invalid SSH port for this instance.';
+        }
 
+        // Avoid local shell interpolation and do not disable host-key verification.
+        // accept-new pins the first observed key and rejects later key changes.
         try {
-            const { stdout, stderr } = await execAsync(sshCmd, { timeout: 60000, maxBuffer: 1024 * 1024 });
+            const { stdout, stderr } = await execFileAsync('ssh', [
+                '-o', 'StrictHostKeyChecking=accept-new',
+                '-o', 'ConnectTimeout=10',
+                '-p', String(port),
+                '--', `root@${handle.ip}`,
+                String(args.command)
+            ], { timeout: 60000, maxBuffer: 1024 * 1024 });
             return (stdout.trim() + (stderr.trim() ? `\nSTDERR: ${stderr.trim()}` : '')) || 'Command completed.';
         } catch (e: any) {
             return `[SSH ERROR]: ${e.message}\n${e.stderr || ''}`;

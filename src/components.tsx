@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import Spinner from 'ink-spinner';
 
 const RobotLogo = () => (
@@ -13,22 +13,36 @@ const RobotLogo = () => (
 
 export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> = ({
   version = 'v0.1.6',
-  activeAgent = 'Arrektys Code'
+  activeAgent = 'VERTEX'
 }) => {
-  const repeatCount = Math.max(0, 91 - activeAgent.length - version.length);
-  const activeModel = process.env.AI_MODEL || 'gpt-4o';
+  const { stdout } = useStdout();
+  const terminalWidth = Math.max(40, Math.min(120, stdout.columns || 80));
+  const innerWidth = terminalWidth - 2;
+  const compact = terminalWidth < 72;
+  const panelWidth = Math.max(18, Math.floor(innerWidth / 2) - 1);
+  const repeatCount = Math.max(0, innerWidth - activeAgent.length - version.length - 5);
+  const activeModel = process.env.AI_MODEL || 'provider not configured';
   const currentCwd = process.cwd();
+  const cwdDisplay = currentCwd.length > panelWidth - 4 ? `…${currentCwd.slice(-(panelWidth - 5))}` : currentCwd;
 
   return (
-    <Box flexDirection="column" width={97}>
+    <Box flexDirection="column" width={terminalWidth}>
       {/* Top Border with Title */}
-      <Box flexDirection="row">
+      <Box flexDirection="row" flexWrap="nowrap">
         <Text color="cyan">╭─ </Text>
         <Text color="cyan" bold>{activeAgent} {version} </Text>
         <Text color="cyan">{"─".repeat(repeatCount)}╮</Text>
       </Box>
 
       {/* Main Content Area */}
+      {compact ? (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} width={terminalWidth}>
+          <Text bold>Welcome to VERTEX</Text>
+          <Text color="gray">{activeModel}</Text>
+          <Text color="gray">{cwdDisplay}</Text>
+          <Text color="cyan">Try /help · ? for shortcuts</Text>
+        </Box>
+      ) : (
       <Box flexDirection="row">
         {/* Left Border */}
         <Box flexDirection="column" width={1}>
@@ -36,11 +50,11 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
         </Box>
 
         {/* Left Pane (Welcome & Details) */}
-        <Box width={47} flexDirection="column" alignItems="center" paddingX={2}>
+        <Box width={panelWidth} flexDirection="column" alignItems="center" paddingX={1}>
           <Text bold>Welcome back!</Text>
           <RobotLogo />
           <Text color="gray">{activeModel}</Text>
-          <Text color="gray">{currentCwd}</Text>
+          <Text color="gray">{cwdDisplay}</Text>
         </Box>
 
         {/* Center Divider */}
@@ -49,17 +63,17 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
         </Box>
 
         {/* Right Pane (Tips & Activity) */}
-        <Box width={47} flexDirection="column" paddingX={2}>
+        <Box width={panelWidth} flexDirection="column" paddingX={1}>
           <Text color="cyan" bold>Tips for getting started</Text>
-          <Text>Run /help to see commands for Arrekt...</Text>
-          <Text>Note: Launched in home directory.</Text>
+          <Text>Use / or type /help to discover commands.</Text>
+          <Text>Workspace: current directory</Text>
           
           <Box flexDirection="row" marginTop={1}>
-            <Text color="cyan">{"─".repeat(43)}</Text>
+            <Text color="cyan">{"─".repeat(Math.max(8, panelWidth - 4))}</Text>
           </Box>
           
           <Text color="cyan" bold>Recent activity</Text>
-          <Text color="gray">No recent activity</Text>
+          <Text color="gray">Activity appears as tasks run.</Text>
         </Box>
 
         {/* Right Border */}
@@ -67,22 +81,73 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
           <Text color="cyan">{'│\n│\n│\n│\n┤\n│\n│\n│\n│'}</Text>
         </Box>
       </Box>
+      )}
+      {!compact && (
+        <Box flexDirection="row">
+          <Text color="cyan">╰{"─".repeat(panelWidth)}┴{"─".repeat(panelWidth)}╯</Text>
+        </Box>
+      )}
+    </Box>
+  );
+};
 
-      {/* Bottom Border */}
-      <Box flexDirection="row">
-        <Text color="cyan">╰{"─".repeat(47)}┴{"─".repeat(47)}╯</Text>
+export type TaskLifecycleStatus = 'starting' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export const AgentStatusMonitor: React.FC<{ message: string; status?: TaskLifecycleStatus }> = ({
+  message,
+  status = 'running'
+}) => {
+  const active = status === 'starting' || status === 'running';
+  const color = status === 'completed' ? 'green' : status === 'failed' ? 'red' : status === 'cancelled' ? 'yellow' : 'cyan';
+  const label = status === 'starting' ? 'STARTING' : status === 'running' ? 'RUNNING' : status === 'completed' ? 'COMPLETED' : status === 'failed' ? 'FAILED' : 'CANCELLED';
+
+  return (
+    <Box marginY={1} paddingX={1} flexDirection="column">
+      <Box>
+        {active ? <Text color={color}><Spinner type="dots" /> </Text> : <Text color={color} bold>{status === 'completed' ? '✓ ' : status === 'failed' ? '✗ ' : '■ '}</Text>}
+        <Text color={color} bold>{label}</Text>
+        <Text color={active ? color : 'gray'}> · {message}</Text>
       </Box>
     </Box>
   );
 };
 
-export const AgentStatusMonitor: React.FC<{ message: string }> = ({ message }) => {
+
+export interface TaskResultSummaryProps {
+  status: TaskLifecycleStatus;
+  durationMs: number;
+  output: string;
+}
+
+export const TaskResultSummary: React.FC<TaskResultSummaryProps> = ({ status, durationMs, output }) => {
+  const diffFiles = Array.from(output.matchAll(/^\+\+\+ b\/(.+)$/gm), (match) => match[1]);
+  const mentionedFiles = Array.from(output.matchAll(/(?:modified|created|deleted|changed)\s+(?:file\s+)?[:"]?([\w./@-]+\.[\w-]+)/gi), (match) => match[1]);
+  const files = Array.from(new Set([...diffFiles, ...mentionedFiles])).slice(0, 6);
+  const testLine = output.match(/(?:# tests\s+\d+[\s\S]{0,160}# pass\s+\d+[\s\S]{0,80}# fail\s+0|(?:tests?|suites?)\s+passed\s*[:=]?\s*\d+|(?:all\s+)?\d+\s+tests?\s+passed|(?:tests?|suites?)\s+failed\s*[:=]?\s*\d+|\d+\s+failed(?:,|\s+and\s+)\s*\d+\s+passed)/i);
+  const duration = durationMs < 1000 ? String(durationMs) + ' ms' : (durationMs / 1000).toFixed(1) + ' s';
+  const statusColor = status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'yellow';
+
   return (
-    <Box marginY={1} paddingX={1}>
-      <Text color="cyan">
-        <Spinner type="dots" />
-      </Text>
-      <Text color="cyan" italic> {message}</Text>
+    <Box borderStyle="round" borderColor={statusColor} paddingX={1} paddingY={1} flexDirection="column" marginY={1}>
+      <Box justifyContent="space-between">
+        <Text bold color={statusColor}>TASK SUMMARY · {status.toUpperCase()}</Text>
+        <Text dimColor>{duration}</Text>
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text color="cyan" bold>Changed files (detected)</Text>
+        {files.length > 0
+          ? files.map((file) => <Text key={file} dimColor>• {file}</Text>)
+          : <Text dimColor>No changed-file evidence detected in the response.</Text>}
+      </Box>
+      <Box marginTop={1} flexDirection="column">
+        <Text color="cyan" bold>Test evidence (detected)</Text>
+        {testLine
+          ? <Text dimColor>{testLine[0]}</Text>
+          : <Text color="yellow">No explicit test result detected. Verification is unconfirmed.</Text>}
+      </Box>
+      <Box marginTop={1}>
+        <Text dimColor>Output: {output.length.toLocaleString()} characters · Based on returned text, not independent repository inspection.</Text>
+      </Box>
     </Box>
   );
 };

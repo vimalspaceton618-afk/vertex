@@ -36,7 +36,7 @@ async function isDockerAvailable(): Promise<boolean> {
  * Run a command inside an ephemeral Alpine Linux Docker container.
  * The container is removed immediately upon completion.
  */
-async function runInDocker(command: string, timeoutMs: number): Promise<string> {
+async function runInDocker(command: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
     const docker = new Docker();
 
     // Check image is available locally
@@ -62,7 +62,11 @@ async function runInDocker(command: string, timeoutMs: number): Promise<string> 
         },
     });
 
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    let removeAbortListener = () => {};
     try {
+        if (signal?.aborted) return '[SANDBOX]: Cancelled before start.';
+
         // Attach before starting to capture output
         const stream = await container.attach({ stream: true, stdout: true, stderr: true });
         let output = '';
@@ -88,24 +92,39 @@ async function runInDocker(command: string, timeoutMs: number): Promise<string> 
             stream.on('end', resolve);
         });
 
-        // Timeout race
-        let timedOut = false;
-        const timeoutPromise = new Promise<void>((resolve) => {
-            setTimeout(() => { timedOut = true; resolve(); }, timeoutMs);
-        });
-
+        // Start first, then bind cancellation to the running container.
         await container.start();
+        let timedOut = false;
+        let cancelled = false;
+        const timeoutPromise = new Promise<void>((resolve) => {
+            timeoutHandle = setTimeout(() => { timedOut = true; resolve(); }, timeoutMs);
+        });
+        const abortPromise = signal ? new Promise<void>((resolve) => {
+            const onAbort = () => {
+                cancelled = true;
+                void container.kill().catch(() => undefined).finally(resolve);
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+            if (signal.aborted) onAbort();
+        }) : new Promise<void>(() => {});
+
         await Promise.race([
             container.wait().then(() => outputPromise),
             timeoutPromise,
+            abortPromise
         ]);
 
-        if (timedOut) {
+        if (timedOut || cancelled) {
             try { await container.kill(); } catch { /* may have already exited */ }
         }
 
+        if (cancelled) return '[SANDBOX]: Cancelled.';
+        if (timedOut) return '[SANDBOX]: Command timed out.';
         return output || '[SANDBOX]: Command completed with no output.';
     } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        removeAbortListener();
         // Always clean up the container
         try {
             await container.remove({ force: true });
@@ -115,7 +134,7 @@ async function runInDocker(command: string, timeoutMs: number): Promise<string> 
     }
 }
 
-async function runSafetyResearchDocker(command: string, timeoutMs: number, image: string): Promise<string> {
+async function runSafetyResearchDocker(command: string, timeoutMs: number, image: string, signal?: AbortSignal): Promise<string> {
     if (!SAFETY_SANDBOX_IMAGES.includes(image as any)) {
         return `[SAFETY SANDBOX BLOCKED]: Image is not allowlisted: ${image}\nAllowed images: ${SAFETY_SANDBOX_IMAGES.join(', ')}`;
     }
@@ -159,8 +178,11 @@ async function runSafetyResearchDocker(command: string, timeoutMs: number, image
         exitCode: null,
         timedOut: false
     };
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    let removeAbortListener = () => {};
 
     try {
+        if (signal?.aborted) return '[SAFETY SANDBOX]: Cancelled before start.';
         const stream = await container.attach({ stream: true, stdout: true, stderr: true });
         const outputPromise = new Promise<void>((resolve) => {
             container.modem.demuxStream(
@@ -189,20 +211,31 @@ async function runSafetyResearchDocker(command: string, timeoutMs: number, image
             return outputPromise;
         });
         const timeoutPromise = new Promise<void>((resolve) => {
-            setTimeout(() => {
+            timeoutHandle = setTimeout(() => {
                 result.timedOut = true;
                 resolve();
             }, timeoutMs);
         });
+        let cancelled = false;
+        const abortPromise = signal ? new Promise<void>((resolve) => {
+            const onAbort = () => {
+                cancelled = true;
+                void container.kill().catch(() => undefined).finally(resolve);
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+            if (signal.aborted) onAbort();
+        }) : new Promise<void>(() => {});
 
-        await Promise.race([waitPromise, timeoutPromise]);
-        if (result.timedOut) {
+        await Promise.race([waitPromise, timeoutPromise, abortPromise]);
+        if (result.timedOut || cancelled) {
             try {
                 await container.kill();
             } catch {
                 // Container may have already exited.
             }
         }
+        if (cancelled) return '[SAFETY SANDBOX]: Cancelled.';
 
         return [
             '[SAFETY SANDBOX OUTPUT]',
@@ -216,6 +249,8 @@ async function runSafetyResearchDocker(command: string, timeoutMs: number, image
             result.output || 'Command completed with no output.'
         ].join('\n');
     } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        removeAbortListener();
         try {
             await container.remove({ force: true });
         } catch {
@@ -269,7 +304,8 @@ export class DockerSandboxTool implements Tool {
 
     async execute(
         args: { command: string; timeoutMs?: number },
-        requestConfirmation: (msg: string) => Promise<boolean>
+        requestConfirmation: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
     ): Promise<string> {
         const timeoutMs = args.timeoutMs ?? SANDBOX_TIMEOUT_MS;
         const policyBlock = await enforceToolPolicy({
@@ -279,11 +315,12 @@ export class DockerSandboxTool implements Tool {
             promptLabel: 'Docker sandbox'
         }, requestConfirmation);
         if (policyBlock) return policyBlock;
+        if (signal?.aborted) return '[SANDBOX]: Cancelled before execution.';
 
         const dockerAvailable = await isDockerAvailable();
 
         if (dockerAvailable) {
-            const result = await runInDocker(args.command, timeoutMs);
+            const result = await runInDocker(args.command, timeoutMs, signal);
             return `[DOCKER SANDBOX OUTPUT]:\n${result}`;
         }
 
@@ -317,7 +354,8 @@ export class SafetyResearchSandboxTool implements Tool {
 
     async execute(
         args: { command: string; image?: string; timeoutMs?: number },
-        requestConfirmation: (msg: string) => Promise<boolean>
+        requestConfirmation: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
     ): Promise<string> {
         const image = args.image || SANDBOX_IMAGE;
         const timeoutMs = Math.max(1000, Math.min(Number(args.timeoutMs || SANDBOX_TIMEOUT_MS), 120000));
@@ -328,12 +366,13 @@ export class SafetyResearchSandboxTool implements Tool {
             promptLabel: 'Safety research sandbox'
         }, requestConfirmation);
         if (policyBlock) return policyBlock;
+        if (signal?.aborted) return '[SAFETY SANDBOX]: Cancelled before execution.';
 
         const dockerAvailable = await isDockerAvailable();
         if (!dockerAvailable) {
             return '[SAFETY SANDBOX BLOCKED]: Docker is unavailable. Start Docker and pull an allowlisted image, for example: docker pull alpine:latest';
         }
 
-        return runSafetyResearchDocker(args.command, timeoutMs, image);
+        return runSafetyResearchDocker(args.command, timeoutMs, image, signal);
     }
 }

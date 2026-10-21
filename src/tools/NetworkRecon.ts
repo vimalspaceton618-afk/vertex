@@ -53,7 +53,12 @@ export class TcpScanTool implements Tool {
         additionalProperties: false
     };
 
-    async execute(args: { target: string; ports: string; timeout?: number; concurrency?: number }): Promise<string> {
+    async execute(
+        args: { target: string; ports: string; timeout?: number; concurrency?: number },
+        _requestConfirmation?: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
+    ): Promise<string> {
+        if (signal?.aborted) return '[TCP SCAN CANCELLED]';
         const timeout = args.timeout ?? 2000;
         const concurrency = Math.min(args.concurrency ?? 100, 500);
         const ports = shuffle(parsePorts(args.ports));
@@ -62,10 +67,20 @@ export class TcpScanTool implements Tool {
         if (ports.length > 10000) return '[TCP SCAN ERROR]: Port range too large (max 10000).';
 
         const results: { port: number; status: string; banner?: string }[] = [];
-        let idx = 0;
+        const activeSockets = new Set<net.Socket>();
+        const abortSockets = () => {
+            for (const socket of activeSockets) socket.destroy();
+        };
+        signal?.addEventListener('abort', abortSockets, { once: true });
 
         const scanPort = (port: number): Promise<void> => new Promise(resolve => {
+            if (signal?.aborted) {
+                resolve();
+                return;
+            }
             const sock = new net.Socket();
+            activeSockets.add(sock);
+            sock.once('close', () => activeSockets.delete(sock));
             let banner = '';
             sock.setTimeout(timeout);
 
@@ -110,12 +125,19 @@ export class TcpScanTool implements Tool {
             });
         });
 
-        // Batch execution
+        // Batch execution. Abort closes current sockets and prevents additional batches.
         const batches = Math.ceil(ports.length / concurrency);
-        for (let b = 0; b < batches; b++) {
-            const batch = ports.slice(b * concurrency, (b + 1) * concurrency);
-            await Promise.all(batch.map(p => scanPort(p)));
+        try {
+            for (let b = 0; b < batches; b++) {
+                if (signal?.aborted) return '[TCP SCAN CANCELLED]';
+                const batch = ports.slice(b * concurrency, (b + 1) * concurrency);
+                await Promise.all(batch.map(p => scanPort(p)));
+            }
+        } finally {
+            signal?.removeEventListener('abort', abortSockets);
+            abortSockets();
         }
+        if (signal?.aborted) return '[TCP SCAN CANCELLED]';
 
         // Deduplicate
         const seen = new Set<number>();
@@ -152,7 +174,12 @@ export class UdpProbeTool implements Tool {
         additionalProperties: false
     };
 
-    async execute(args: { target: string; ports?: string }): Promise<string> {
+    async execute(
+        args: { target: string; ports?: string },
+        _requestConfirmation?: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
+    ): Promise<string> {
+        if (signal?.aborted) return '[UDP PROBE CANCELLED]';
         const portList = parsePorts(args.ports || '53,123,161,69');
         const probes: Record<number, Buffer> = {
             53: Buffer.from([0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x07, 0x76, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x04, 0x62, 0x69, 0x6e, 0x64, 0x00, 0x00, 0x10, 0x00, 0x03]),
@@ -164,26 +191,35 @@ export class UdpProbeTool implements Tool {
         const results: string[] = [`[UDP PROBE] ${args.target}`, ''];
 
         for (const port of portList) {
+            if (signal?.aborted) return '[UDP PROBE CANCELLED]';
             const probe = probes[port] || Buffer.from('probe');
             try {
                 const response = await new Promise<string>((resolve) => {
                     const sock = dgram.createSocket('udp4');
-                    const timer = setTimeout(() => { sock.close(); resolve('no response'); }, 3000);
+                    let settled = false;
+                    const finish = (value: string) => {
+                        if (settled) return;
+                        settled = true;
+                        clearTimeout(timer);
+                        signal?.removeEventListener('abort', onAbort);
+                        try { sock.close(); } catch { /* socket may already be closed */ }
+                        resolve(value);
+                    };
+                    const onAbort = () => finish('[cancelled]');
+                    const timer = setTimeout(() => finish('no response'), 3000);
+                    signal?.addEventListener('abort', onAbort, { once: true });
                     sock.on('message', (msg) => {
-                        clearTimeout(timer);
                         const hex = msg.toString('hex').slice(0, 64);
-                        sock.close();
-                        resolve(`response (${msg.length} bytes): ${hex}...`);
+                        finish(`response (${msg.length} bytes): ${hex}...`);
                     });
-                    sock.on('error', (err) => {
-                        clearTimeout(timer);
-                        sock.close();
-                        resolve(`error: ${err.message}`);
-                    });
-                    sock.send(probe, port, args.target);
+                    sock.on('error', (err) => finish(`error: ${err.message}`));
+                    if (signal?.aborted) onAbort();
+                    else sock.send(probe, port, args.target);
                 });
+                if (signal?.aborted || response === '[cancelled]') return '[UDP PROBE CANCELLED]';
                 results.push(`  ${port}/udp  ${response}`);
             } catch (e: any) {
+                if (signal?.aborted) return '[UDP PROBE CANCELLED]';
                 results.push(`  ${port}/udp  error: ${e.message}`);
             }
         }
@@ -204,14 +240,19 @@ export class HttpProbeTool implements Tool {
         additionalProperties: false
     };
 
-    async execute(args: { url: string }): Promise<string> {
+    async execute(
+        args: { url: string },
+        _requestConfirmation?: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
+    ): Promise<string> {
+        if (signal?.aborted) return '[HTTP PROBE CANCELLED]';
         try {
             const parsed = new URL(args.url);
             const isHttps = parsed.protocol === 'https:';
             const mod = isHttps ? https : http;
 
             return new Promise<string>((resolve) => {
-                const req = mod.request(parsed, { method: 'GET', timeout: 8000, rejectUnauthorized: false } as any, (res) => {
+                const req = mod.request(parsed, { method: 'GET', timeout: 8000, rejectUnauthorized: false, signal } as any, (res) => {
                     const headers = res.headers;
                     const lines = [`[HTTP PROBE] ${args.url}`, ''];
                     lines.push(`Status: ${res.statusCode} ${res.statusMessage}`);
@@ -259,7 +300,12 @@ export class HttpProbeTool implements Tool {
                     resolve(truncate(lines.join('\n')));
                 });
                 req.on('timeout', () => { req.destroy(); resolve('[HTTP PROBE ERROR]: Connection timeout'); });
-                req.on('error', (e) => resolve(`[HTTP PROBE ERROR]: ${e.message}`));
+                req.on('error', (e) => resolve(signal?.aborted ? '[HTTP PROBE CANCELLED]' : `[HTTP PROBE ERROR]: ${e.message}`));
+                if (signal?.aborted) {
+                    req.destroy();
+                    resolve('[HTTP PROBE CANCELLED]');
+                    return;
+                }
                 req.end();
             });
         } catch (e: any) {

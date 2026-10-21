@@ -199,15 +199,9 @@ export function evaluateToolPolicy(options: {
     const scope = loadScope();
     const targets = (options.targets || []).map((target) => target.trim()).filter(Boolean);
 
-    // Unrestricted lab mode — allow everything, no confirmation gates
-    if (isUnrestrictedLab(scope)) {
-        return {
-            allowed: true,
-            requiresConfirmation: false,
-            reason: 'Allowed — unrestricted_lab mode active'
-        };
-    }
-
+    // Explicit blocklist entries are absolute, including in unrestricted lab mode.
+    // Lab mode may relax scope and confirmation requirements, but must not override a
+    // user's explicit denylist.
     for (const target of targets) {
         if (isTargetBlocked(target, scope.blockedTargets)) {
             return {
@@ -216,6 +210,16 @@ export function evaluateToolPolicy(options: {
                 reason: `Target is blocked by scope policy: ${target}`
             };
         }
+    }
+
+    // Unrestricted lab mode relaxes scope and confirmation gates only after the
+    // explicit target blocklist has been enforced.
+    if (isUnrestrictedLab(scope)) {
+        return {
+            allowed: true,
+            requiresConfirmation: false,
+            reason: 'Allowed — unrestricted_lab mode active'
+        };
     }
 
     const outOfScope = targets.filter((target) => !isTargetInScope(target, scope));

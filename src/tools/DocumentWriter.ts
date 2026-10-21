@@ -64,7 +64,7 @@ export class DocumentWriterTool extends Tool {
                     args: ['--no-sandbox', '--disable-setuid-sandbox']
                 });
                 const page = await browser.newPage();
-                await page.setContent(htmlBody, { waitUntil: 'networkidle0' });
+                await page.setContent(htmlBody, { waitUntil: 'load' });
                 await page.pdf({
                     path: resolvedPath,
                     format: 'A4',

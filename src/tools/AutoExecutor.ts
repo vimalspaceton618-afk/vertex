@@ -2,10 +2,36 @@ import { Tool } from './Tool.js';
 import { enforceToolPolicy } from '../core/policy/PolicyEngine.js';
 import { DockerSandboxTool } from './DockerSandbox.js';
 import { ToolRegistry } from './registry.js';
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
+import * as net from 'net';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+
+/**
+ * Validate SSH destination components before passing them to the SSH client.
+ * Commands remain shell commands on the remote host by design, but the local
+ * SSH invocation must never interpolate user-controlled host/user values.
+ */
+export function validateRemoteTarget(host: string, user: string): string | null {
+    if (!user || !/^[A-Za-z_][A-Za-z0-9_.-]{0,31}$/.test(user)) {
+        return 'Invalid SSH username.';
+    }
+
+    const candidate = host.trim();
+    const unwrappedHost = candidate.startsWith('[') && candidate.endsWith(']')
+        ? candidate.slice(1, -1)
+        : candidate;
+    const isIpAddress = net.isIP(unwrappedHost) !== 0;
+    const isHostname = /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*\.?$/.test(candidate);
+
+    if (!isIpAddress && !isHostname) {
+        return 'Invalid SSH host; use a hostname or IP address without a port.';
+    }
+
+    return null;
+}
 
 export class AutoExecutorTool implements Tool {
     name = 'auto_executor';
@@ -37,10 +63,19 @@ export class AutoExecutorTool implements Tool {
 
     async execute(
         args: { generatedCommand: string; executionTarget: 'host' | 'sandbox' | 'remote'; remoteOptions?: { host?: string; user?: string; auth?: string } },
-        requestConfirmation: (msg: string) => Promise<boolean>
+        requestConfirmation: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
     ): Promise<string> {
+        if (args.executionTarget === 'remote') {
+            if (!args.remoteOptions?.host || !args.remoteOptions?.user) {
+                return '[REMOTE EXEC ERROR]: Missing remoteOptions (host, user).';
+            }
+            const invalidTarget = validateRemoteTarget(args.remoteOptions.host, args.remoteOptions.user);
+            if (invalidTarget) return `[REMOTE EXEC ERROR]: ${invalidTarget}`;
+        }
+
         const targets = args.executionTarget === 'remote' && args.remoteOptions?.host ? [args.remoteOptions.host] : undefined;
-        
+
         const policyBlock = await enforceToolPolicy({
             toolName: this.name,
             riskLevel: 'unrestricted',
@@ -49,27 +84,35 @@ export class AutoExecutorTool implements Tool {
             targets
         }, requestConfirmation);
         if (policyBlock) return policyBlock;
+        if (signal?.aborted) return '[EXEC CANCELLED]: Request was cancelled before execution.';
 
         if (args.executionTarget === 'host') {
             try {
-                const { stdout, stderr } = await execAsync(args.generatedCommand, { timeout: 30000 });
+                const { stdout, stderr } = await execAsync(args.generatedCommand, { timeout: 30000, signal });
                 return stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
             } catch (e: any) {
+                if (signal?.aborted) return '[HOST EXEC CANCELLED]';
                 return `[HOST EXEC ERROR]: ${e.message}`;
             }
         } else if (args.executionTarget === 'sandbox') {
             const sandbox = new DockerSandboxTool();
-            return sandbox.execute({ command: args.generatedCommand }, requestConfirmation);
+            return sandbox.execute({ command: args.generatedCommand }, requestConfirmation, signal);
         } else if (args.executionTarget === 'remote') {
             if (!args.remoteOptions?.host || !args.remoteOptions?.user) {
                 return '[REMOTE EXEC ERROR]: Missing remoteOptions (host, user).';
             }
-            // A simple SSH wrapper.
-            const sshCommand = `ssh ${args.remoteOptions.user}@${args.remoteOptions.host} "${args.generatedCommand.replace(/"/g, '\\"')}"`;
+            // Use execFile so the local shell never parses the SSH destination.
+            // The remote command is intentionally passed as one SSH command argument.
+            const sshTarget = `${args.remoteOptions.user}@${args.remoteOptions.host}`;
             try {
-                const { stdout, stderr } = await execAsync(sshCommand, { timeout: 30000 });
+                const { stdout, stderr } = await execFileAsync(
+                    'ssh',
+                    ['-o', 'BatchMode=yes', '--', sshTarget, args.generatedCommand],
+                    { timeout: 30000, signal }
+                );
                 return stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
             } catch (e: any) {
+                if (signal?.aborted) return '[REMOTE EXEC CANCELLED]';
                 return `[REMOTE EXEC ERROR]: ${e.message}`;
             }
         }
@@ -101,7 +144,8 @@ export class ToolPipelineTool implements Tool {
 
     async execute(
         args: { pipeline: string; initialInput?: string },
-        requestConfirmation: (msg: string) => Promise<boolean>
+        requestConfirmation: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
     ): Promise<string> {
         const policyBlock = await enforceToolPolicy({
             toolName: this.name,
@@ -116,6 +160,7 @@ export class ToolPipelineTool implements Tool {
         let pipelineOutput = '';
 
         for (const toolName of tools) {
+            if (signal?.aborted) return pipelineOutput + '\n[PIPELINE CANCELLED]';
             const tool = this.registry.getTool(toolName);
             if (!tool) {
                 return `[PIPELINE ERROR]: Tool not found: ${toolName}`;
@@ -132,11 +177,13 @@ export class ToolPipelineTool implements Tool {
                     else if (props.length > 0) toolArgs[props[0]] = currentInput;
                 }
 
-                const result = await tool.execute(toolArgs, requestConfirmation);
+                const result = await tool.execute(toolArgs, requestConfirmation, signal);
+                if (signal?.aborted) return pipelineOutput + '\n[PIPELINE CANCELLED]';
                 
                 if (typeof result !== 'string') {
                     let genOutput = '';
                     for await (const chunk of result) {
+                        if (signal?.aborted) return pipelineOutput + '\n[PIPELINE CANCELLED]';
                         genOutput += chunk;
                     }
                     currentInput = genOutput;

@@ -15,22 +15,24 @@ export function resolveInsideWorkspace(targetPath: string): string {
     const root = getWorkspaceRoot();
     const resolved = path.resolve(root, targetPath);
 
-    let realResolved = resolved;
-    try {
-        if (fs.existsSync(resolved)) {
-            realResolved = fs.realpathSync(resolved);
-        } else {
-            const dir = path.dirname(resolved);
-            if (fs.existsSync(dir)) {
-                realResolved = path.join(fs.realpathSync(dir), path.basename(resolved));
-            }
+    // Resolve the deepest existing ancestor before validating. Checking only the
+    // immediate parent misses paths like symlink-to-outside/new-dir/file when
+    // the intermediate directory does not exist yet.
+    let ancestor = resolved;
+    const suffix: string[] = [];
+    while (!fs.existsSync(ancestor)) {
+        const parent = path.dirname(ancestor);
+        if (parent === ancestor) {
+            throw new Error(`Unable to resolve a safe parent for path: ${targetPath}`);
         }
-    } catch {
-        // Fall back to resolved if realpath fails
+        suffix.unshift(path.basename(ancestor));
+        ancestor = parent;
     }
 
+    const realAncestor = fs.realpathSync(ancestor);
+    const realResolved = path.join(realAncestor, ...suffix);
     const rel = path.relative(root, realResolved);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    if (rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
         throw new Error(`Path escapes workspace root: ${targetPath}`);
     }
     return realResolved;
