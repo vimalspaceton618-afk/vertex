@@ -163,3 +163,25 @@ test('global config initialization refuses to follow a symlink', (t) => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('global config initialization refuses to traverse a symlinked config directory', (t) => {
+  const root = makeTempDir();
+  const outside = makeTempDir();
+  const linkedDir = path.join(root, '.vertexcli');
+  const previousPath = ConfigManager.globalConfigPath;
+  try {
+    try {
+      fs.symlinkSync(outside, linkedDir, 'dir');
+    } catch {
+      t.skip('Symlink creation is unavailable on this platform.');
+      return;
+    }
+    ConfigManager.globalConfigPath = path.join(linkedDir, 'config.json');
+    assert.throws(() => ConfigManager.init(), /symbolic link/i);
+    assert.equal(fs.existsSync(path.join(outside, 'config.json')), false, 'the linked directory must not receive a config file');
+  } finally {
+    ConfigManager.globalConfigPath = previousPath;
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
