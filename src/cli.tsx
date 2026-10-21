@@ -302,8 +302,21 @@ async function runHeadless(prompt: string, asJson: boolean, autoApprove: boolean
 }
 
 if (options.daemon) {
-  import('./core/daemon.js').then(({ startDaemon }) => {
+  import('./core/daemon.js').then(({ startDaemon, stopDaemon }) => {
     startDaemon();
+    let shuttingDown = false;
+    const shutdown = () => {
+      if (shuttingDown) return;
+      shuttingDown = true;
+      stopDaemon().then(() => {
+        process.exitCode = 0;
+      }).catch((error) => {
+        process.stderr.write(`[DAEMON STOP ERROR]: ${error instanceof Error ? error.message : String(error)}\n`);
+        process.exitCode = 1;
+      });
+    };
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
   }).catch((error) => {
     process.stderr.write(`[DAEMON START ERROR]: ${error.message}\n`);
     process.exitCode = 1;
