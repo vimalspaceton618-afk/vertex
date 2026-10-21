@@ -67,6 +67,15 @@ function readRegularFileNoFollow(filePath: string): { stat: fs.Stats; content: s
   }
 }
 
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return ['http:', 'https:'].includes(parsed.protocol) && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+}
+
 export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticReport {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const env = options.env ?? process.env;
@@ -173,45 +182,40 @@ export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticR
   const localOnly = ['local', 'local_only', 'local-only', 'offline'].includes(mode);
   const apiKeyConfigured = Boolean(configured('OPENAI_API_KEY'));
   const localModelConfigured = Boolean(configured('LOCAL_MODEL') || configured('AI_MODEL'));
+  const cloudBaseUrl = configured('OPENAI_BASE_URL');
+  const localBaseUrl = configured('LOCAL_BASE_URL');
+  const cloudEndpointValid = !cloudBaseUrl || isValidHttpUrl(cloudBaseUrl);
+  const localEndpointValid = isValidHttpUrl(localBaseUrl);
+
   if (localOnly) {
-    if (configured('LOCAL_BASE_URL') && localModelConfigured) {
-      add('Model provider', 'pass', 'Local mode has an endpoint and a model identifier configured.');
+    if (localEndpointValid && localModelConfigured) {
+      add('Model provider', 'pass', 'Local mode has a valid HTTP(S) endpoint and a model identifier configured.');
     } else {
-      add('Model provider', 'warn', 'Local mode is selected, but a local endpoint or model identifier may still need configuration.');
+      add('Model provider', 'warn', 'Local mode needs a valid HTTP(S) endpoint without embedded credentials and a model identifier.');
     }
-  } else if (apiKeyConfigured) {
+  } else if (apiKeyConfigured && cloudEndpointValid) {
     add('Model provider', 'pass', 'A cloud-provider API key is configured; the value is never displayed.');
+  } else if (apiKeyConfigured) {
+    add('Model provider', 'warn', 'A cloud-provider API key exists, but the custom endpoint is invalid; the key value is never displayed.');
   } else {
     add('Model provider', 'warn', 'No cloud-provider API key was detected; model requests may fail until credentials are configured.');
   }
 
-  const cloudBaseUrl = configured('OPENAI_BASE_URL');
   if (cloudBaseUrl) {
-    try {
-      const parsed = new URL(cloudBaseUrl);
-      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
-        add('Cloud provider URL', 'warn', 'The configured cloud provider URL has an unsupported scheme or embedded credentials; review it locally without sharing the URL publicly.');
-      } else {
-        add('Cloud provider URL', 'pass', 'The configured cloud provider URL uses HTTP(S) and contains no embedded username/password.');
-      }
-    } catch {
-      add('Cloud provider URL', 'warn', 'The configured cloud provider URL is not a valid absolute URL.');
+    if (cloudEndpointValid) {
+      add('Cloud provider URL', 'pass', 'The configured cloud provider URL uses HTTP(S) and contains no embedded username/password.');
+    } else {
+      add('Cloud provider URL', 'warn', 'The configured cloud provider URL is invalid, uses an unsupported scheme, or embeds credentials; review it locally without sharing the URL publicly.');
     }
   } else {
     add('Cloud provider URL', 'pass', 'No custom cloud provider URL is set; the SDK default endpoint may be used.');
   }
 
-  const localBaseUrl = configured('LOCAL_BASE_URL');
   if (localBaseUrl) {
-    try {
-      const parsed = new URL(localBaseUrl);
-      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
-        add('Local provider URL', 'warn', 'The configured local provider URL has an unsupported scheme or embedded credentials; review it locally without sharing the URL publicly.');
-      } else {
-        add('Local provider URL', 'pass', 'The configured local provider URL uses HTTP(S) and contains no embedded username/password.');
-      }
-    } catch {
-      add('Local provider URL', 'warn', 'The configured local provider URL is not a valid absolute URL.');
+    if (localEndpointValid) {
+      add('Local provider URL', 'pass', 'The configured local provider URL uses HTTP(S) and contains no embedded username/password.');
+    } else {
+      add('Local provider URL', 'warn', 'The configured local provider URL is invalid, uses an unsupported scheme, or embeds credentials; review it locally without sharing the URL publicly.');
     }
   } else if (localOnly) {
     add('Local provider URL', 'warn', 'Local/offline mode is selected but no local provider URL is configured.');
