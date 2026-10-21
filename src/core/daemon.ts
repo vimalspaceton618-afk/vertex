@@ -5,7 +5,34 @@ let orchestrator: AgentManager | null = null;
 let daemonPort = 8899;
 
 const MAX_REQUEST_BYTES = 64 * 1024;
-const MAX_PROMPT_CHARS = 20_000;
+export const MAX_DAEMON_PROMPT_CHARS = 20_000;
+
+export type DaemonPayloadValidation =
+    | { ok: true; prompt: string }
+    | { ok: false; status: 400 | 413; message: string };
+
+/** Validate untrusted JSON before passing a prompt to the agent manager. */
+export function validateDaemonPayload(payload: unknown): DaemonPayloadValidation {
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+        return { ok: false, status: 400, message: 'Expected a JSON object.' };
+    }
+
+    const prompt = (payload as { prompt?: unknown }).prompt;
+    if (typeof prompt !== 'string' || !prompt.trim()) {
+        return { ok: false, status: 400, message: 'A non-empty string prompt is required.' };
+    }
+    if (prompt.length > MAX_DAEMON_PROMPT_CHARS) {
+        return {
+            ok: false,
+            status: 413,
+            message: `Prompt exceeds the ${MAX_DAEMON_PROMPT_CHARS}-character limit.`
+        };
+    }
+
+    // Deliberately return only the validated prompt. Fields such as autoApprove
+    // from an untrusted request must never become execution-policy inputs.
+    return { ok: true, prompt };
+}
 
 /**
  * Browser-origin requests to the loopback daemon are only accepted from loopback
@@ -88,23 +115,13 @@ const server = http.createServer(async (req, res) => {
             if (rejected || res.destroyed) return;
             try {
                 const payload: unknown = JSON.parse(body);
-                if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
-                    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-                    res.end('Expected a JSON object.');
+                const validation = validateDaemonPayload(payload);
+                if (!validation.ok) {
+                    res.writeHead(validation.status, { 'Content-Type': 'text/plain; charset=utf-8' });
+                    res.end(validation.message);
                     return;
                 }
-
-                const { prompt } = payload as { prompt?: unknown };
-                if (typeof prompt !== 'string' || !prompt.trim()) {
-                    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-                    res.end('A non-empty string prompt is required.');
-                    return;
-                }
-                if (prompt.length > MAX_PROMPT_CHARS) {
-                    res.writeHead(413, { 'Content-Type': 'text/plain; charset=utf-8' });
-                    res.end(`Prompt exceeds the ${MAX_PROMPT_CHARS}-character limit.`);
-                    return;
-                }
+                const { prompt } = validation;
 
                 res.writeHead(200, {
                     'Content-Type': 'text/plain; charset=utf-8',
