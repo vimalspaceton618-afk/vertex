@@ -34,7 +34,7 @@ test('CLI init is idempotent and does not initialize global runtime state', () =
     const first = runCli(['init'], workspace, home);
     assert.equal(first.error, undefined, first.error?.message);
     assert.equal(first.status, 0, first.stderr);
-    assert.match(first.stdout, /Created .*\\.env/);
+    assert.match(first.stdout, /Created .*\.env/);
     const envPath = path.join(workspace, '.env');
     const initial = fs.readFileSync(envPath, 'utf8');
     assert.match(initial, /^OPENAI_API_KEY=$/m);
@@ -42,11 +42,11 @@ test('CLI init is idempotent and does not initialize global runtime state', () =
       assert.equal(fs.statSync(envPath).mode & 0o777, 0o600);
     }
 
-    fs.writeFileSync(envPath, 'OPENAI_API_KEY=preserve-existing-value\\n', { mode: 0o600 });
+    fs.writeFileSync(envPath, 'OPENAI_API_KEY=preserve-existing-value\n', { mode: 0o600 });
     const second = runCli(['init'], workspace, home);
     assert.equal(second.status, 0, second.stderr);
     assert.match(second.stdout, /already exists/i);
-    assert.equal(fs.readFileSync(envPath, 'utf8'), 'OPENAI_API_KEY=preserve-existing-value\\n');
+    assert.equal(fs.readFileSync(envPath, 'utf8'), 'OPENAI_API_KEY=preserve-existing-value\n');
     assert.equal(fs.existsSync(path.join(home, '.vertexcli', 'config.json')), false,
       'init must not initialize global agent runtime configuration');
   } finally {
@@ -60,7 +60,7 @@ test('CLI doctor --json is parseable, redacts secrets, and has no agent-startup 
   const home = makeTempDir();
   const secret = 'cli-smoke-secret-should-never-print';
   try {
-    fs.writeFileSync(path.join(workspace, '.env'), 'OPENAI_API_KEY=' + secret + '\\n', { mode: 0o600 });
+    fs.writeFileSync(path.join(workspace, '.env'), 'OPENAI_API_KEY=' + secret + '\n', { mode: 0o600 });
     const result = runCli(['doctor', '--json'], workspace, home);
     assert.equal(result.error, undefined, result.error?.message);
     assert.equal(result.status, 0, result.stderr);
@@ -84,13 +84,13 @@ test('CLI doctor does not echo credentials embedded in provider URLs', () => {
   const password = 'private-cli-password';
   try {
     fs.writeFileSync(path.join(workspace, '.env'),
-      'OPENAI_BASE_URL=https://' + user + ':' + password + '@example.invalid/v1\\n',
+      'OPENAI_BASE_URL=https://' + user + ':' + password + '@example.invalid/v1\n',
       { mode: 0o600 });
     const result = runCli(['doctor', '--json'], workspace, home);
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
     assert.ok(report.items.some((item) => item.name === 'Cloud provider URL' && item.status === 'warn'));
-    assert.doesNotMatch(result.stdout, /private-cli-user|private-cli-password|example\\.invalid/);
+    assert.doesNotMatch(result.stdout, /private-cli-user|private-cli-password|example\.invalid/);
   } finally {
     fs.rmSync(workspace, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
