@@ -41,7 +41,11 @@ export class ShellTool extends Tool {
         additionalProperties: false
     };
 
-    async execute(args: { command: string; cwd?: string; timeoutMs?: number }, requestConfirmation: (msg: string) => Promise<boolean>): Promise<string> {
+    async execute(
+        args: { command: string; cwd?: string; timeoutMs?: number },
+        requestConfirmation: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
+    ): Promise<string> {
         const allowlist = parseList(process.env.COMMAND_ALLOWLIST);
         const denylist = parseList(process.env.COMMAND_DENYLIST);
         const command = args.command || '';
@@ -67,9 +71,15 @@ export class ShellTool extends Tool {
         if (!approved) {
             return "[USER OVERRIDE]: Command execution was denied. Do not retry this command without changing your approach.";
         }
+        if (signal?.aborted) return '[EXECUTION CANCELLED]: Request was cancelled before the command started.';
 
         try {
-            const { stdout, stderr } = await execAsync(command, { cwd, timeout: timeoutMs, maxBuffer: DEFAULT_MAX_OUTPUT_BYTES * 2 });
+            const { stdout, stderr } = await execAsync(command, {
+                cwd,
+                timeout: timeoutMs,
+                maxBuffer: DEFAULT_MAX_OUTPUT_BYTES * 2,
+                signal
+            });
             const out = truncateOutput(stdout.trim(), DEFAULT_MAX_OUTPUT_BYTES);
             const err = truncateOutput(stderr.trim(), DEFAULT_MAX_OUTPUT_BYTES);
             SharedContext.appendRecentCommand(command);
@@ -77,6 +87,7 @@ export class ShellTool extends Tool {
             if(!out && !err) return "Command succeeded with no output.";
             return out + (err ? "\nSTDERR:\n" + err : "");
         } catch (error: any) {
+            if (signal?.aborted) return '[EXECUTION CANCELLED]: Running command was terminated.';
             const stdOut = truncateOutput(error.stdout || '', DEFAULT_MAX_OUTPUT_BYTES);
             const stdErr = truncateOutput(error.stderr || '', DEFAULT_MAX_OUTPUT_BYTES);
             return `[EXECUTION FAILED]: ${error.message}\nSTDOUT: ${stdOut}\nSTDERR: ${stdErr}`;
