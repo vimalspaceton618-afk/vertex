@@ -177,6 +177,38 @@ export function awaitWithAbort<T>(operation: PromiseLike<T> | T, signal?: AbortS
     });
 }
 
+/**
+ * Consume an async tool stream without waiting indefinitely for its next item
+ * after cancellation. The producer should also honor the provided signal.
+ */
+export async function* iterateWithAbort<T>(
+    iterable: AsyncIterable<T>,
+    signal?: AbortSignal
+): AsyncGenerator<T> {
+    const iterator = iterable[Symbol.asyncIterator]();
+    let completed = false;
+    try {
+        while (!signal?.aborted) {
+            let result: IteratorResult<T>;
+            try {
+                result = await awaitWithAbort(iterator.next(), signal);
+            } catch (error) {
+                if (signal?.aborted) break;
+                throw error;
+            }
+            if (result.done) {
+                completed = true;
+                break;
+            }
+            yield result.value;
+        }
+    } finally {
+        if (!completed && typeof iterator.return === 'function') {
+            void Promise.resolve(iterator.return()).catch(() => undefined);
+        }
+    }
+}
+
 export abstract class BaseAgent {
     protected history: Message[] = [];
     protected registry = new ToolRegistry();
@@ -351,8 +383,7 @@ export abstract class BaseAgent {
                             const executionResult = await awaitWithAbort(tool.execute(args, requestConfirmation, signal), signal);
                             let resultStr = '';
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
-                                for await (const chunk of executionResult as any) {
-                                    if (signal?.aborted) break;
+                                for await (const chunk of iterateWithAbort(executionResult as AsyncIterable<string>, signal)) {
                                     resultStr += chunk;
                                 }
                             } else {
@@ -388,8 +419,7 @@ export abstract class BaseAgent {
                             const executionResult = await awaitWithAbort(tool.execute(args, requestConfirmation, signal), signal);
                             if (signal?.aborted) break;
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
-                                for await (const chunk of executionResult as any) {
-                                    if (signal?.aborted) break;
+                                for await (const chunk of iterateWithAbort(executionResult as AsyncIterable<string>, signal)) {
                                     yield chunk;
                                     resultStr += chunk;
                                 }
