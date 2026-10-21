@@ -39,10 +39,22 @@ export class ConfigManager {
         // 1. Load local .env if the user is explicitly developing VERTEX
         dotenv.config();
 
-        // 2. Ensure the config directory is a real, private directory.
+        // 2. Ensure the config directory is a real, private directory. Inspect before creating
+        // so a pre-existing directory symlink is never traversed by mkdir.
         const dir = path.dirname(this.globalConfigPath);
-        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-        const dirStat = fs.lstatSync(dir);
+        let dirStat: fs.Stats;
+        try {
+            dirStat = fs.lstatSync(dir);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            try {
+                // The default config directory is a direct child of the user's home directory.
+                fs.mkdirSync(dir, { mode: 0o700 });
+            } catch (createError) {
+                if ((createError as NodeJS.ErrnoException).code !== 'EEXIST') throw createError;
+            }
+            dirStat = fs.lstatSync(dir);
+        }
         if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
             throw new Error('Refusing to use the global config directory because it is a symbolic link or not a directory.');
         }
