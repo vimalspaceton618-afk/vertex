@@ -22,7 +22,7 @@ export class GitStatusTool extends Tool {
     name = 'git_status';
     description = 'Shows git status in short form.';
     schema = { type: 'object', properties: {}, additionalProperties: false };
-    async execute(_args: any, _requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
+    async execute(_args?: any, _requestConfirmation?: (msg: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
         try {
             const out = await runGit('git status --short --branch', 12000, signal);
             SharedContext.appendAudit({ event: 'git_status' });
@@ -45,7 +45,7 @@ export class GitDiffTool extends Tool {
         },
         additionalProperties: false
     };
-    async execute(args: { staged?: boolean; maxChars?: number }, _requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
+    async execute(args: { staged?: boolean; maxChars?: number }, _requestConfirmation?: (msg: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
         try {
             const cmd = args?.staged ? 'git diff --staged' : 'git diff';
             return (await runGit(cmd, Number(args?.maxChars || 12000), signal)) || 'No diff output.';
@@ -66,7 +66,7 @@ export class GitLogTool extends Tool {
         },
         additionalProperties: false
     };
-    async execute(args: { limit?: number }, _requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
+    async execute(args: { limit?: number }, _requestConfirmation?: (msg: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
         try {
             const limit = Math.max(1, Math.min(Number(args?.limit || 10), 50));
             const out = await runGit(`git log -n ${limit} --oneline --decorate`, 12000, signal);
