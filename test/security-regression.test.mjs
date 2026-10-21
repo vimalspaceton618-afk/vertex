@@ -9,7 +9,7 @@ import { EventEmitter } from 'node:events';
 import { validateRemoteTarget, AutoExecutorTool } from '../dist/tools/AutoExecutor.js';
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
 import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
-import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer, createDaemonAbortController } from '../dist/core/daemon.js';
+import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer, createDaemonAbortController, stopDaemon } from '../dist/core/daemon.js';
 import { awaitWithAbort, iterateWithAbort, waitForRetryDelay } from '../dist/core/agent/BaseAgent.js';
 import { toGraphQLStringLiteral } from '../dist/tools/CloudCompute.js';
 
@@ -437,4 +437,18 @@ test('daemon client disconnect aborts an active OpenAI-compatible streaming requ
       await new Promise((resolve, reject) => modelServer.close((error) => error ? reject(error) : resolve()));
     }
   }
+});
+
+
+test('stopDaemon closes an idle listener and can be called repeatedly', async () => {
+  if (daemonServer.listening) throw new Error('Daemon server unexpectedly already listening');
+  await new Promise((resolve, reject) => {
+    daemonServer.once('error', reject);
+    daemonServer.listen(0, '127.0.0.1', resolve);
+  });
+  assert.equal(daemonServer.listening, true);
+  await stopDaemon();
+  assert.equal(daemonServer.listening, false);
+  await stopDaemon();
+  assert.equal(daemonServer.listening, false);
 });
