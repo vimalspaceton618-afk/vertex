@@ -452,3 +452,101 @@ test('stopDaemon closes an idle listener and can be called repeatedly', async ()
   await stopDaemon();
   assert.equal(daemonServer.listening, false);
 });
+
+
+test('stopDaemon aborts active model work and waits for request cleanup', async () => {
+  if (daemonServer.listening) throw new Error('Daemon server unexpectedly already listening');
+
+  let resolveModelRequest;
+  let resolveUpstreamClose;
+  const modelRequestReceived = new Promise((resolve) => { resolveModelRequest = resolve; });
+  const upstreamClosed = new Promise((resolve) => { resolveUpstreamClose = resolve; });
+  const modelServer = http.createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      resolveModelRequest();
+      response.on('close', () => {
+        if (!response.writableEnded) resolveUpstreamClose();
+      });
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      });
+      response.flushHeaders();
+      response.write('data: ' + JSON.stringify({
+        id: 'chatcmpl-shutdown-test',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'mock-shutdown-test',
+        choices: [{ index: 0, delta: { role: 'assistant', content: 'working' }, finish_reason: null }]
+      }) + '\n\n');
+    });
+  });
+
+  const envKeys = ['OPENAI_BASE_URL', 'OPENAI_API_KEY', 'AI_MODEL', 'BRAIN_MODE', 'BRAIN_ROUTING_MAP'];
+  const oldEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  let clientRequest;
+  let clientResponseEnded;
+  const within = (promise, label) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(label)), 3000);
+    Promise.resolve(promise).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); }
+    );
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      modelServer.once('error', reject);
+      modelServer.listen(0, '127.0.0.1', resolve);
+    });
+    const modelAddress = modelServer.address();
+    assert.ok(modelAddress && typeof modelAddress === 'object');
+    process.env.OPENAI_BASE_URL = `http://127.0.0.1:${modelAddress.port}/v1`;
+    process.env.OPENAI_API_KEY = 'test-only-shutdown-key';
+    process.env.AI_MODEL = 'mock-shutdown-test';
+    process.env.BRAIN_MODE = 'cloud';
+    delete process.env.BRAIN_ROUTING_MAP;
+
+    await new Promise((resolve, reject) => {
+      daemonServer.once('error', reject);
+      daemonServer.listen(0, '127.0.0.1', resolve);
+    });
+    const daemonAddress = daemonServer.address();
+    assert.ok(daemonAddress && typeof daemonAddress === 'object');
+
+    const responseEnded = new Promise((resolve, reject) => {
+      clientRequest = http.request({
+        host: '127.0.0.1',
+        port: daemonAddress.port,
+        path: '/run',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }, (response) => {
+        response.on('data', () => {});
+        response.on('end', resolve);
+        response.on('error', reject);
+      });
+      clientRequest.on('error', reject);
+      clientRequest.end(JSON.stringify({ prompt: 'Say one short greeting.' }));
+    });
+    clientResponseEnded = responseEnded;
+
+    await within(modelRequestReceived, 'Daemon did not start model work within 3 seconds');
+    await within(stopDaemon(), 'Daemon did not close cleanly after aborting active work');
+    await within(upstreamClosed, 'Shutdown did not abort the upstream model stream');
+    await within(clientResponseEnded, 'Daemon response did not finish during shutdown');
+    assert.equal(daemonServer.listening, false);
+  } finally {
+    clientRequest?.destroy();
+    for (const key of envKeys) {
+      if (oldEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = oldEnv[key];
+    }
+    if (daemonServer.listening) await stopDaemon();
+    if (modelServer.listening) {
+      await new Promise((resolve, reject) => modelServer.close((error) => error ? reject(error) : resolve()));
+    }
+  }
+});
