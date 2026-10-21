@@ -18,6 +18,7 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
   const { stdout } = useStdout();
   const terminalWidth = Math.max(40, Math.min(120, stdout.columns || 80));
   const innerWidth = terminalWidth - 2;
+  const compact = terminalWidth < 72;
   const panelWidth = Math.max(18, Math.floor(innerWidth / 2) - 1);
   const repeatCount = Math.max(0, innerWidth - activeAgent.length - version.length - 5);
   const activeModel = process.env.AI_MODEL || 'provider not configured';
@@ -34,6 +35,14 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
       </Box>
 
       {/* Main Content Area */}
+      {compact ? (
+        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} width={terminalWidth}>
+          <Text bold>Welcome to VERTEX</Text>
+          <Text color="gray">{activeModel}</Text>
+          <Text color="gray">{cwdDisplay}</Text>
+          <Text color="cyan">Try /help · ? for shortcuts</Text>
+        </Box>
+      ) : (
       <Box flexDirection="row">
         {/* Left Border */}
         <Box flexDirection="column" width={1}>
@@ -77,6 +86,7 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
       <Box flexDirection="row">
         <Text color="cyan">╰{"─".repeat(panelWidth)}┴{"─".repeat(panelWidth)}╯</Text>
       </Box>
+      )}
     </Box>
   );
 };
