@@ -7,7 +7,7 @@ import path from 'node:path';
 import { validateRemoteTarget } from '../dist/tools/AutoExecutor.js';
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
 import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
-import { isAllowedDaemonOrigin } from '../dist/core/daemon.js';
+import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS } from '../dist/core/daemon.js';
 import { toGraphQLStringLiteral } from '../dist/tools/CloudCompute.js';
 
 test('remote SSH target validation rejects shell metacharacters in host and username', () => {
@@ -87,6 +87,44 @@ test('daemon only accepts browser origins on loopback hosts', () => {
   assert.equal(isAllowedDaemonOrigin('http://localhost:5173', 8899), false);
   assert.equal(isAllowedDaemonOrigin('null', 8899), false);
   assert.equal(isAllowedDaemonOrigin('http://localhost.evil.example:8899', 8899), false);
+});
+
+test('daemon payload validation rejects non-object JSON values and malformed prompts', () => {
+  for (const payload of [null, undefined, [], 'prompt', 7, true]) {
+    const result = validateDaemonPayload(payload);
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 400);
+  }
+
+  for (const prompt of ['', '   ', '\\n\\t', 7, null, {}, []]) {
+    const result = validateDaemonPayload({ prompt });
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 400);
+  }
+});
+
+test('daemon payload validation enforces the prompt length boundary', () => {
+  const atLimit = validateDaemonPayload({ prompt: 'x'.repeat(MAX_DAEMON_PROMPT_CHARS) });
+  assert.equal(atLimit.ok, true);
+  if (atLimit.ok) assert.equal(atLimit.prompt.length, MAX_DAEMON_PROMPT_CHARS);
+
+  const overLimit = validateDaemonPayload({ prompt: 'x'.repeat(MAX_DAEMON_PROMPT_CHARS + 1) });
+  assert.equal(overLimit.ok, false);
+  if (!overLimit.ok) {
+    assert.equal(overLimit.status, 413);
+    assert.match(overLimit.message, /character limit/);
+  }
+});
+
+test('daemon payload validation never promotes request fields into approval policy', () => {
+  const result = validateDaemonPayload({
+    prompt: 'inspect the workspace',
+    autoApprove: true,
+    confirm: true,
+    approval: 'granted'
+  });
+  assert.deepEqual(result, { ok: true, prompt: 'inspect the workspace' });
+  assert.equal(Object.hasOwn(result, 'autoApprove'), false);
 });
 
 test('GraphQL string literal encoding preserves content without raw line breaks', () => {
