@@ -113,7 +113,8 @@ test('CLI init refuses a symlinked .env and preserves the link target', (t) => {
       return;
     }
     const result = runCli(['init'], workspace, home);
-    assert.equal(result.status, 1, 'init should not report success when .env already exists as a symlink');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Not changed: .*already exists/i);
     assert.equal(fs.readFileSync(target, 'utf8'), original);
     assert.equal(fs.lstatSync(envPath).isSymbolicLink(), true);
     assert.equal(fs.existsSync(path.join(home, '.vertexcli', 'config.json')), false);
