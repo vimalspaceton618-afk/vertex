@@ -65,22 +65,23 @@ vertex
 
 ## Quickstart
 
-1. Copy environment template and edit:
+1. From the project/workspace directory where you want VERTEX to work, create a local configuration template:
 ```bash
-cp .env.example .env
-# Edit .env -> add OPENAI_API_KEY and other vars
+vertex init
 ```
+This creates `.env` only if it does not already exist, uses user-only file permissions on POSIX systems, and leaves API-key fields empty. It never overwrites an existing `.env`.
 
-Sample .env:
-```env
-OPENAI_API_KEY=sk-...
-OPENAI_BASE_URL=https://openrouter.ai/api/v1
-AI_MODEL=google/gemma-4-26b-a4b-it:free
-VERTEX_WORKSPACE_ROOT=
-SHELL_TIMEOUT_MS=60000
-```
+2. Edit `.env` and set the provider credentials and optional model/endpoint for your environment. **Never commit `.env` or paste API keys into issues, logs, or chat.**
 
-2. Start VERTEX in a project directory:
+3. Check the environment without starting an agent task:
+```bash
+vertex doctor
+# Machine-readable output:
+vertex doctor --json
+``
+The doctor checks Node.js, workspace access, configuration-file validity/permissions, provider configuration, Git, and optional Docker availability. It does not print secret values or launch containers/agent tasks.
+
+4. Start VERTEX in that workspace:
 ```bash
 vertex
 ```
@@ -190,6 +191,8 @@ Use the interactive slash command interface:
 - `/summarize-url <url>` — Extract & summarize page content
 - `/screenshot-url <url>` — Capture a full-page screenshot
 - `/health` — Inspect runtime status
+- `/doctor` — Check environment/configuration safely
+- `/init` — Create a private local `.env` template without overwriting an existing file
 - `/help` — Display command menu
 - `/exit` — Terminate session
 
