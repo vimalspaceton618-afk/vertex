@@ -1,7 +1,7 @@
 {
   "name": "vertex-cli",
   "version": "1.0.0",
-  "description": "<div align=\"center\">",
+  "description": "Terminal-native agentic cybersecurity and developer CLI",
   "main": "dist/cli.js",
   "bin": {
     "vertex": "./dist/cli.js"
@@ -9,13 +9,20 @@
   "scripts": {
     "build": "tsc",
     "start": "node ./dist/cli.js",
-    "test": "npm run build && node --test test/*.test.mjs && node --test test/ux-regression.test.mjs"
+    "test": "npm run build && node --test test/*.test.mjs && node --test test/ux-regression.test.mjs",
+    "prepare": "npm run build"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/vimalspaceton618-afk/vertex.git"
   },
-  "keywords": [],
+  "keywords": [
+    "cli",
+    "cybersecurity",
+    "agentic-ai",
+    "developer-tools",
+    "terminal"
+  ],
   "author": "SpaceTon",
   "license": "UNLICENSED",
   "type": "module",
@@ -42,5 +49,12 @@
     "@types/react": "^19.2.14",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.2"
+  },
+  "files": [
+    "dist/**",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
   }
 }
