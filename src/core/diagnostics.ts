@@ -48,6 +48,25 @@ function parseMajor(version: string): number {
  * Read-only local diagnostics. This function never prints, returns, or logs credential values
  * and never invokes a shell or makes a network request.
  */
+function readRegularFileNoFollow(filePath: string): { stat: fs.Stats; content: string } {
+  const noFollow = typeof fs.constants.O_NOFOLLOW === 'number' ? fs.constants.O_NOFOLLOW : 0;
+  const fd = fs.openSync(filePath, fs.constants.O_RDONLY | noFollow);
+  try {
+    const openedStat = fs.fstatSync(fd);
+    if (!openedStat.isFile()) throw new Error('Not a regular file.');
+    const pathStat = fs.lstatSync(filePath);
+    if (pathStat.isSymbolicLink()
+      || !pathStat.isFile()
+      || pathStat.dev !== openedStat.dev
+      || pathStat.ino !== openedStat.ino) {
+      throw new Error('File path changed during inspection.');
+    }
+    return { stat: openedStat, content: fs.readFileSync(fd, 'utf8') };
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
 export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticReport {
   const cwd = path.resolve(options.cwd ?? process.cwd());
   const env = options.env ?? process.env;
@@ -88,7 +107,7 @@ export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticR
     } else {
       fs.accessSync(configPath, fs.constants.R_OK);
       try {
-        const parsed: unknown = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const parsed: unknown = JSON.parse(readRegularFileNoFollow(configPath).content);
         if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
           add('Global config', 'fail', 'The global config must contain a JSON object.');
         } else {
@@ -126,7 +145,7 @@ export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticR
       add('Workspace .env', 'warn', 'The workspace .env path is not a regular file and was not read.');
     } else {
       fs.accessSync(workspaceEnvPath, fs.constants.R_OK);
-      workspaceEnv = dotenv.parse(fs.readFileSync(workspaceEnvPath));
+      workspaceEnv = dotenv.parse(readRegularFileNoFollow(workspaceEnvPath).content);
       if (platform !== 'win32' && (envStat.mode & 0o077) !== 0) {
         add('Workspace .env permissions', 'warn', 'The workspace .env is accessible to group/other users; restrict it to the current user (chmod 600).');
       } else if (platform !== 'win32') {
@@ -166,20 +185,36 @@ export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticR
     add('Model provider', 'warn', 'No cloud-provider API key was detected; model requests may fail until credentials are configured.');
   }
 
-  const baseUrl = configured('OPENAI_BASE_URL');
-  if (baseUrl) {
+  const cloudBaseUrl = configured('OPENAI_BASE_URL');
+  if (cloudBaseUrl) {
     try {
-      const parsed = new URL(baseUrl);
+      const parsed = new URL(cloudBaseUrl);
       if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
-        add('Provider URL', 'warn', 'The configured provider URL has an unsupported scheme or embedded credentials; review it without sharing the URL publicly.');
+        add('Cloud provider URL', 'warn', 'The configured cloud provider URL has an unsupported scheme or embedded credentials; review it locally without sharing the URL publicly.');
       } else {
-        add('Provider URL', 'pass', 'The configured provider URL uses HTTP(S) and contains no embedded username/password.');
+        add('Cloud provider URL', 'pass', 'The configured cloud provider URL uses HTTP(S) and contains no embedded username/password.');
       }
     } catch {
-      add('Provider URL', 'warn', 'The configured provider URL is not a valid absolute URL.');
+      add('Cloud provider URL', 'warn', 'The configured cloud provider URL is not a valid absolute URL.');
     }
   } else {
-    add('Provider URL', 'pass', 'No custom provider URL is set; the SDK default endpoint may be used.');
+    add('Cloud provider URL', 'pass', 'No custom cloud provider URL is set; the SDK default endpoint may be used.');
+  }
+
+  const localBaseUrl = configured('LOCAL_BASE_URL');
+  if (localBaseUrl) {
+    try {
+      const parsed = new URL(localBaseUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+        add('Local provider URL', 'warn', 'The configured local provider URL has an unsupported scheme or embedded credentials; review it locally without sharing the URL publicly.');
+      } else {
+        add('Local provider URL', 'pass', 'The configured local provider URL uses HTTP(S) and contains no embedded username/password.');
+      }
+    } catch {
+      add('Local provider URL', 'warn', 'The configured local provider URL is not a valid absolute URL.');
+    }
+  } else if (localOnly) {
+    add('Local provider URL', 'warn', 'Local/offline mode is selected but no local provider URL is configured.');
   }
 
   if (options.checkGit !== false) {
