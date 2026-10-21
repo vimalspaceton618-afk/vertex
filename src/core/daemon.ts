@@ -24,6 +24,10 @@ export function createDaemonAbortController(
     const onResponseClose = () => abortOnDisconnect();
     req.once('aborted', onRequestAborted);
     res.once('close', onResponseClose);
+    // A disconnect may have happened just before listeners were attached.
+    if (req.aborted || (res.destroyed && !res.writableFinished)) {
+        controller.abort();
+    }
     return {
         controller,
         cleanup: () => {
