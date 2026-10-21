@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { initializeWorkspaceConfig } from '../dist/core/setup.js';
 import { collectDiagnostics, formatDiagnosticReport } from '../dist/core/diagnostics.js';
@@ -183,5 +185,52 @@ test('global config initialization refuses to traverse a symlinked config direct
     ConfigManager.globalConfigPath = previousPath;
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('CLI doctor and init run without hidden config or scope writes', () => {
+  const root = makeTempDir();
+  const workspace = path.join(root, 'workspace');
+  fs.mkdirSync(workspace);
+  const cliPath = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
+  const env = {
+    ...process.env,
+    HOME: root,
+    USERPROFILE: root,
+    APPDATA: root,
+    OPENAI_API_KEY: '',
+    OPENAI_BASE_URL: '',
+    BRAIN_MODE: 'cloud'
+  };
+  try {
+    const doctor = spawnSync(process.execPath, [cliPath, 'doctor', '--json'], {
+      cwd: workspace,
+      env,
+      encoding: 'utf8',
+      timeout: 15000
+    });
+    assert.equal(doctor.error, undefined, doctor.error?.message);
+    assert.equal(doctor.status, 0, doctor.stderr);
+    const report = JSON.parse(doctor.stdout);
+    assert.ok(Array.isArray(report.items));
+    assert.equal(fs.existsSync(path.join(root, '.vertexcli')), false, 'doctor must not initialize global config');
+    assert.equal(fs.existsSync(path.join(workspace, '.vertex')), false, 'doctor must not create workspace policy state');
+
+    const init = spawnSync(process.execPath, [cliPath, 'init'], {
+      cwd: workspace,
+      env,
+      encoding: 'utf8',
+      timeout: 15000
+    });
+    assert.equal(init.error, undefined, init.error?.message);
+    assert.equal(init.status, 0, init.stderr);
+    assert.ok(fs.existsSync(path.join(workspace, '.env')), 'init should create the local template');
+    assert.equal(fs.existsSync(path.join(root, '.vertexcli')), false, 'init must not initialize global config as a side effect');
+    assert.equal(fs.existsSync(path.join(workspace, '.vertex')), false, 'init must not create workspace policy state');
+    if (process.platform !== 'win32') {
+      assert.equal(fs.statSync(path.join(workspace, '.env')).mode & 0o777, 0o600);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
