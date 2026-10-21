@@ -125,6 +125,32 @@ test('doctor detects old Node.js, unsafe config permissions, and invalid JSON', 
   }
 });
 
+test('doctor warns when workspace .env permissions expose the file to other users', () => {
+  const cwd = makeTempDir();
+  const envPath = path.join(cwd, '.env');
+  try {
+    fs.writeFileSync(envPath, 'OPENAI_API_KEY=placeholder\n', { mode: 0o644 });
+    if (process.platform !== 'win32') fs.chmodSync(envPath, 0o644);
+    const report = collectDiagnostics({
+      cwd,
+      configPath: path.join(cwd, 'missing-config.json'),
+      env: {},
+      nodeVersion: '22.1.0',
+      platform: process.platform,
+      checkGit: false,
+      checkDocker: false
+    });
+    if (process.platform !== 'win32') {
+      assert.ok(report.items.some((item) => item.name === 'Workspace .env permissions' && item.status === 'warn'));
+    } else {
+      assert.ok(report.items.some((item) => item.name === 'Workspace .env permissions' && item.status === 'warn'));
+    }
+    assert.doesNotMatch(JSON.stringify(report), /placeholder/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test('doctor reads regular workspace .env files but refuses to follow symlinks', () => {
   const cwd = makeTempDir();
   const outside = makeTempDir();
