@@ -36,7 +36,7 @@ async function isDockerAvailable(): Promise<boolean> {
  * Run a command inside an ephemeral Alpine Linux Docker container.
  * The container is removed immediately upon completion.
  */
-async function runInDocker(command: string, timeoutMs: number): Promise<string> {
+async function runInDocker(command: string, timeoutMs: number, signal?: AbortSignal): Promise<string> {
     const docker = new Docker();
 
     // Check image is available locally
@@ -62,7 +62,11 @@ async function runInDocker(command: string, timeoutMs: number): Promise<string> 
         },
     });
 
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    let removeAbortListener = () => {};
     try {
+        if (signal?.aborted) return '[SANDBOX]: Cancelled before start.';
+
         // Attach before starting to capture output
         const stream = await container.attach({ stream: true, stdout: true, stderr: true });
         let output = '';
@@ -88,24 +92,39 @@ async function runInDocker(command: string, timeoutMs: number): Promise<string> 
             stream.on('end', resolve);
         });
 
-        // Timeout race
-        let timedOut = false;
-        const timeoutPromise = new Promise<void>((resolve) => {
-            setTimeout(() => { timedOut = true; resolve(); }, timeoutMs);
-        });
-
+        // Start first, then bind cancellation to the running container.
         await container.start();
+        let timedOut = false;
+        let cancelled = false;
+        const timeoutPromise = new Promise<void>((resolve) => {
+            timeoutHandle = setTimeout(() => { timedOut = true; resolve(); }, timeoutMs);
+        });
+        const abortPromise = signal ? new Promise<void>((resolve) => {
+            const onAbort = () => {
+                cancelled = true;
+                void container.kill().catch(() => undefined).finally(resolve);
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            removeAbortListener = () => signal.removeEventListener('abort', onAbort);
+            if (signal.aborted) onAbort();
+        }) : new Promise<void>(() => {});
+
         await Promise.race([
             container.wait().then(() => outputPromise),
             timeoutPromise,
+            abortPromise
         ]);
 
-        if (timedOut) {
+        if (timedOut || cancelled) {
             try { await container.kill(); } catch { /* may have already exited */ }
         }
 
+        if (cancelled) return '[SANDBOX]: Cancelled.';
+        if (timedOut) return '[SANDBOX]: Command timed out.';
         return output || '[SANDBOX]: Command completed with no output.';
     } finally {
+        if (timeoutHandle) clearTimeout(timeoutHandle);
+        removeAbortListener();
         // Always clean up the container
         try {
             await container.remove({ force: true });
@@ -269,7 +288,8 @@ export class DockerSandboxTool implements Tool {
 
     async execute(
         args: { command: string; timeoutMs?: number },
-        requestConfirmation: (msg: string) => Promise<boolean>
+        requestConfirmation: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
     ): Promise<string> {
         const timeoutMs = args.timeoutMs ?? SANDBOX_TIMEOUT_MS;
         const policyBlock = await enforceToolPolicy({
@@ -279,11 +299,12 @@ export class DockerSandboxTool implements Tool {
             promptLabel: 'Docker sandbox'
         }, requestConfirmation);
         if (policyBlock) return policyBlock;
+        if (signal?.aborted) return '[SANDBOX]: Cancelled before execution.';
 
         const dockerAvailable = await isDockerAvailable();
 
         if (dockerAvailable) {
-            const result = await runInDocker(args.command, timeoutMs);
+            const result = await runInDocker(args.command, timeoutMs, signal);
             return `[DOCKER SANDBOX OUTPUT]:\n${result}`;
         }
 
