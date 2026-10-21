@@ -22,7 +22,7 @@ test('init creates an empty-secret template with restrictive permissions', () =>
     const envFile = path.join(cwd, '.env');
     const contents = fs.readFileSync(envFile, 'utf8');
     assert.match(contents, /OPENAI_API_KEY=\n/);
-    assert.match(contents, /never commit it/i);
+    assert.match(contents, /never commit it/i);\n    assert.match(contents, /LOCAL_BASE_URL=http:\/\/127\.0\.0\.1:11434\/v1/);\n    assert.match(contents, /LOCAL_MODEL=/);\n    assert.match(contents, /WORKSPACE_ROOT=/);\n    assert.doesNotMatch(contents, /^VERTEX_WORKSPACE_ROOT=/m);
     assert.doesNotMatch(contents, /OPENAI_API_KEY=(?!\s*$)[^\n]+/);
     if (process.platform !== 'win32') {
       assert.equal(fs.statSync(envFile).mode & 0o777, 0o600);
@@ -42,6 +42,30 @@ test('init never overwrites existing credentials or follows an existing .env lin
     assert.equal(fs.readFileSync(envFile, 'utf8'), 'OPENAI_API_KEY=keep-this-private\n');
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('init refuses to follow a pre-existing .env symlink', (t) => {
+  const cwd = makeTempDir();
+  const outside = makeTempDir();
+  const target = path.join(outside, 'protected.env');
+  const envFile = path.join(cwd, '.env');
+  const original = 'OPENAI_API_KEY=do-not-change\\n';
+  try {
+    fs.writeFileSync(target, original, { mode: 0o600 });
+    try {
+      fs.symlinkSync(target, envFile);
+    } catch {
+      t.skip('Symlink creation is unavailable on this platform.');
+      return;
+    }
+    const result = initializeWorkspaceConfig(cwd);
+    assert.equal(result.created, false);
+    assert.equal(fs.readFileSync(target, 'utf8'), original);
+    assert.equal(fs.lstatSync(envFile).isSymbolicLink(), true);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
   }
 });
 
@@ -138,6 +162,30 @@ test('doctor reads regular workspace .env files but refuses to follow symlinks',
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('doctor validates local provider URLs and never echoes embedded credentials', () => {
+  const cwd = makeTempDir();
+  const configPath = path.join(cwd, 'config.json');
+  const privateUrl = 'https://private-user:private-password@example.invalid/v1';
+  try {
+    fs.writeFileSync(configPath, JSON.stringify({ BRAIN_MODE: 'local', LOCAL_BASE_URL: 'file:///tmp/model', LOCAL_MODEL: 'test-model' }), { mode: 0o600 });
+    const report = collectDiagnostics({
+      cwd,
+      configPath,
+      env: { OPENAI_BASE_URL: privateUrl },
+      nodeVersion: '22.1.0',
+      platform: process.platform,
+      checkGit: false,
+      checkDocker: false
+    });
+    const serialized = JSON.stringify(report);
+    assert.ok(report.items.some((item) => item.name === 'Local provider URL' && item.status === 'warn'));
+    assert.ok(report.items.some((item) => item.name === 'Cloud provider URL' && item.status === 'warn'));
+    assert.doesNotMatch(serialized, /private-user|private-password|private\.invalid/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
 
