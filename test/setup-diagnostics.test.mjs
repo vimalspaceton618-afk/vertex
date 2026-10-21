@@ -108,7 +108,7 @@ test('doctor warns on an invalid custom provider URL without echoing it', () => 
     });
     const providerUrl = report.items.find((item) => item.name === 'Provider URL');
     assert.equal(providerUrl?.status, 'warn');
-    assert.doesNotMatch(JSON.stringify(report), new RegExp(unsafeUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    assert.doesNotMatch(JSON.stringify(report), /file:\/\/\/tmp\/private-path/);
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
