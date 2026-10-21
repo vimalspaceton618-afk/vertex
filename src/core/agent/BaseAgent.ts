@@ -110,6 +110,34 @@ function getBrainCandidates(agentName: string): BrainCandidate[] {
     return [cloud, local];
 }
 
+/**
+ * Wait for a retry window without keeping cancelled work asleep.
+ * Returns false when the caller's signal aborts before the delay finishes.
+ */
+export function waitForRetryDelay(ms: number, signal?: AbortSignal): Promise<boolean> {
+    return new Promise((resolve) => {
+        if (signal?.aborted) {
+            resolve(false);
+            return;
+        }
+
+        let settled = false;
+        let timer: ReturnType<typeof setTimeout>;
+        const onAbort = () => finish(false);
+        const finish = (completed: boolean) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            signal?.removeEventListener('abort', onAbort);
+            resolve(completed);
+        };
+
+        timer = setTimeout(() => finish(true), ms);
+        signal?.addEventListener('abort', onAbort, { once: true });
+        if (signal?.aborted) finish(false);
+    });
+}
+
 export abstract class BaseAgent {
     protected history: Message[] = [];
     protected registry = new ToolRegistry();
@@ -195,7 +223,7 @@ export abstract class BaseAgent {
                                 stream: true,
                                 max_tokens: process.env.MAX_TOKENS ? parseInt(process.env.MAX_TOKENS) : undefined,
                                 ...toolsConfig
-                            });
+                            }, { signal });
                             break;
                         } catch (providerError: any) {
                             const formatted = formatProviderFailure(candidate, providerError);
@@ -244,7 +272,8 @@ export abstract class BaseAgent {
                         retryAttempt++;
                         const backoffMs = Math.min(2000 * Math.pow(1.5, retryAttempt), 30000);
                         yield `\n[RATE LIMIT HIT]: Retrying in ${Math.round(backoffMs/1000)}s (Attempt ${retryAttempt}/${MAX_RETRIES})...\n`;
-                        await new Promise(r => setTimeout(r, backoffMs));
+                        const delayCompleted = await waitForRetryDelay(backoffMs, signal);
+                        if (!delayCompleted || signal?.aborted) break;
                         currentResponse = "";
                         currentToolCalls = {};
                     } else {
@@ -284,6 +313,7 @@ export abstract class BaseAgent {
                             let resultStr = '';
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
                                 for await (const chunk of executionResult as any) {
+                                    if (signal?.aborted) break;
                                     resultStr += chunk;
                                 }
                             } else {
@@ -296,7 +326,9 @@ export abstract class BaseAgent {
                     });
 
                     const results = await Promise.allSettled(toolExecPromises);
+                    if (signal?.aborted) break;
                     for (const res of results) {
+                        if (signal?.aborted) break;
                         if (res.status === 'fulfilled') {
                             const { id, name, resultStr } = res.value;
                             this.history.push({ role: 'tool', tool_call_id: id, name, content: resultStr });
@@ -315,6 +347,7 @@ export abstract class BaseAgent {
                         try {
                             const args = JSON.parse(toolCall.function.arguments);
                             const executionResult = await tool.execute(args, requestConfirmation, signal);
+                            if (signal?.aborted) break;
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
                                 for await (const chunk of executionResult as any) {
                                     if (signal?.aborted) break;
