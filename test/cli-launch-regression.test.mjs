@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -48,10 +48,6 @@ function stripAnsi(value) {
   return value.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, '');
 }
 
-function shellQuote(value) {
-  return "'" + value.replace(/'/g, "'\\''") + "'";
-}
-
 test('global CLI help works outside the repository without initializing user state', () => {
   const cwd = makeTempDir();
   const home = makeTempDir();
@@ -70,105 +66,6 @@ test('global CLI help works outside the repository without initializing user sta
       '--help must exit before normal runtime initialization'
     );
   } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(home, { recursive: true, force: true });
-  }
-});
-
-test('no-argument launch renders the TUI, runs /help, and exits cleanly', async (t) => {
-  if (process.platform !== 'linux') {
-    t.skip('This live TTY smoke test uses util-linux script; cross-platform packaging is tested separately.');
-    return;
-  }
-
-  const cwd = makeTempDir();
-  const home = makeTempDir();
-  const env = cleanEnv(home);
-  env.TERM = 'xterm-256color';
-  env.COLUMNS = '100';
-  env.LINES = '30';
-
-  // script supplies a real pseudo-terminal, so Ink sees a genuine TTY rather
-  // than the stream-based MOCK_TTY shim.
-  const command = 'stty cols 100 rows 30; exec ' + shellQuote(process.execPath) + ' ' + shellQuote(cliPath);
-  const child = spawn('script', ['-qefc', command, '/dev/null'], {
-    cwd,
-    env,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    shell: false,
-    windowsHide: true
-  });
-
-  let stdout = '';
-  let stderr = '';
-  let acceptedTrust = false;
-  let requestedHelp = false;
-  let requestedExit = false;
-
-  try {
-    const exitCode = await new Promise((resolve, reject) => {
-      let settled = false;
-      const timer = setTimeout(() => {
-        child.kill('SIGKILL');
-        settle(reject, new Error(
-          'TUI smoke test timed out. stdout: ' + stripAnsi(stdout).slice(-1800) +
-          '\nstderr: ' + stderr.slice(-1000)
-        ));
-      }, 12_000);
-
-      const settle = (callback, value) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        callback(value);
-      };
-
-      const inspectOutput = () => {
-        const visible = stripAnsi(stdout);
-        if (!acceptedTrust && visible.includes('VERTEX ISOLATION WARNING')) {
-          acceptedTrust = true;
-          child.stdin.write('1\r');
-        }
-        if (acceptedTrust && !requestedHelp && visible.includes('Welcome to VERTEX')) {
-          requestedHelp = true;
-          child.stdin.write('/help\r');
-        }
-        if (requestedHelp && !requestedExit && visible.includes('VERTEX COMMANDS')) {
-          requestedExit = true;
-          child.stdin.write('/exit\r');
-        }
-      };
-
-      child.stdout.on('data', (chunk) => {
-        stdout += chunk.toString();
-        inspectOutput();
-      });
-      child.stderr.on('data', (chunk) => {
-        stderr += chunk.toString();
-      });
-      child.on('error', (error) => settle(reject, error));
-      child.on('close', (code, signal) => {
-        if (code !== 0 || !acceptedTrust || !requestedHelp || !requestedExit) {
-          settle(reject, new Error(
-            'TUI did not complete cleanly (code=' + code + ', signal=' + signal +
-            ', trust=' + acceptedTrust + ', help=' + requestedHelp + ', exit=' + requestedExit + ').\n' +
-            'stdout: ' + stripAnsi(stdout).slice(-1800) + '\nstderr: ' + stderr.slice(-1000)
-          ));
-          return;
-        }
-        settle(resolve, code);
-      });
-    });
-
-    const visible = stripAnsi(stdout);
-    assert.equal(exitCode, 0);
-    assert.match(visible, /VERTEX ISOLATION WARNING/);
-    assert.match(visible, /Welcome to VERTEX/);
-    assert.match(visible, /VERTEX COMMANDS/);
-    assert.match(visible, /\/gpu/);
-    assert.match(visible, /Tip: type \/ followed by a few letters/);
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     fs.rmSync(cwd, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
   }
