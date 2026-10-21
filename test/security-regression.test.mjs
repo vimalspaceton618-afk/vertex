@@ -6,7 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
 
-import { validateRemoteTarget } from '../dist/tools/AutoExecutor.js';
+import { validateRemoteTarget, AutoExecutorTool } from '../dist/tools/AutoExecutor.js';
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
 import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
 import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer, createDaemonAbortController } from '../dist/core/daemon.js';
@@ -135,6 +135,42 @@ test('GraphQL string literal encoding preserves content without raw line breaks'
   const encoded = toGraphQLStringLiteral(input);
   assert.equal(JSON.parse(encoded), input);
   assert.equal(encoded.includes('\n'), false);
+});
+
+test('AutoExecutor terminates a host child process when its signal aborts', async () => {
+  const previousRoot = process.env.VERTEX_WORKSPACE_ROOT;
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-executor-cancel-'));
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 100);
+  try {
+    fs.mkdirSync(path.join(workspace, '.vertex'), { recursive: true });
+    fs.writeFileSync(path.join(workspace, '.vertex', 'scope.json'), JSON.stringify({
+      mode: 'unrestricted_lab',
+      localOnly: false,
+      allowedDomains: [],
+      allowedCidrs: [],
+      blockedTargets: [],
+      allowedOffensiveTools: []
+    }));
+    process.env.VERTEX_WORKSPACE_ROOT = workspace;
+
+    const startedAt = Date.now();
+    const result = await new AutoExecutorTool().execute(
+      {
+        generatedCommand: 'node -e "setTimeout(() => {}, 10000)"',
+        executionTarget: 'host'
+      },
+      async () => true,
+      controller.signal
+    );
+    assert.equal(result, '[HOST EXEC CANCELLED]');
+    assert.ok(Date.now() - startedAt < 3000, 'cancelled child process should not run to its full timeout');
+  } finally {
+    clearTimeout(timer);
+    if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
+    else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 test('daemon abort controller cancels work on client disconnect and cleans up listeners', () => {
