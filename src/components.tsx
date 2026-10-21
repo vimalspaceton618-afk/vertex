@@ -81,11 +81,11 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
           <Text color="cyan">{'│\n│\n│\n│\n┤\n│\n│\n│\n│'}</Text>
         </Box>
       </Box>
-
-      {/* Bottom Border */}
-      <Box flexDirection="row">
-        <Text color="cyan">╰{"─".repeat(panelWidth)}┴{"─".repeat(panelWidth)}╯</Text>
-      </Box>
+      )}
+      {!compact && (
+        <Box flexDirection="row">
+          <Text color="cyan">╰{"─".repeat(panelWidth)}┴{"─".repeat(panelWidth)}╯</Text>
+        </Box>
       )}
     </Box>
   );
