@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import net from 'node:net';
 import { EventEmitter } from 'node:events';
 
 import { validateRemoteTarget, AutoExecutorTool } from '../dist/tools/AutoExecutor.js';
@@ -12,6 +13,7 @@ import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
 import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer, createDaemonAbortController, stopDaemon } from '../dist/core/daemon.js';
 import { awaitWithAbort, iterateWithAbort, waitForRetryDelay } from '../dist/core/agent/BaseAgent.js';
 import { toGraphQLStringLiteral } from '../dist/tools/CloudCompute.js';
+import { TcpScanTool, HttpProbeTool } from '../dist/tools/NetworkRecon.js';
 
 test('remote SSH target validation rejects shell metacharacters in host and username', () => {
   assert.match(validateRemoteTarget('example.com;whoami', 'vimal') ?? '', /Invalid SSH host/);
@@ -548,5 +550,83 @@ test('stopDaemon aborts active model work and waits for request cleanup', async 
     if (modelServer.listening) {
       await new Promise((resolve, reject) => modelServer.close((error) => error ? reject(error) : resolve()));
     }
+  }
+});
+
+
+test('TCP scan closes active sockets promptly when the task aborts', async () => {
+  let resolveAccepted;
+  const accepted = new Promise((resolve) => { resolveAccepted = resolve; });
+  const server = net.createServer(() => resolveAccepted());
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const controller = new AbortController();
+  let timer;
+  try {
+    const scan = new TcpScanTool().execute(
+      { target: '127.0.0.1', ports: String(address.port), timeout: 5000, concurrency: 1 },
+      async () => true,
+      controller.signal
+    );
+    await Promise.race([
+      accepted,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('TCP scanner did not connect to the local test server')), 1500); })
+    ]);
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+    controller.abort();
+    const result = await Promise.race([
+      scan,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('TCP scan did not stop after abort')), 1000); })
+    ]);
+    assert.equal(result, '[TCP SCAN CANCELLED]');
+  } finally {
+    if (timer) clearTimeout(timer);
+    controller.abort();
+    await new Promise((resolve) => server.close(() => resolve()));
+  }
+});
+
+test('HTTP probe aborts a pending local HTTP request promptly', async () => {
+  let resolveReceived;
+  const received = new Promise((resolve) => { resolveReceived = resolve; });
+  const server = http.createServer((request, _response) => {
+    request.resume();
+    request.on('end', resolveReceived);
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const controller = new AbortController();
+  let timer;
+  try {
+    const probing = new HttpProbeTool().execute(
+      { url: `http://127.0.0.1:${address.port}/hang` },
+      async () => true,
+      controller.signal
+    );
+    await Promise.race([
+      received,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('HTTP probe request did not reach local test server')), 1500); })
+    ]);
+    if (timer) clearTimeout(timer);
+    timer = undefined;
+    controller.abort();
+    const result = await Promise.race([
+      probing,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('HTTP probe did not stop after abort')), 1000); })
+    ]);
+    assert.equal(result, '[HTTP PROBE CANCELLED]');
+  } finally {
+    if (timer) clearTimeout(timer);
+    controller.abort();
+    await new Promise((resolve) => server.close(() => resolve()));
   }
 });
