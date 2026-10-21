@@ -189,6 +189,34 @@ test('doctor validates local provider URLs and never echoes embedded credentials
   }
 });
 
+test('normal startup refuses to load secrets through a symlinked workspace .env', (t) => {
+  const root = makeTempDir();
+  const outside = makeTempDir();
+  const originalCwd = process.cwd();
+  const key = 'VERTEX_TEST_PRIVATE_ENV';
+  const previousValue = process.env[key];
+  const envFile = path.join(root, '.env');
+  try {
+    fs.writeFileSync(path.join(outside, 'foreign.env'), `${key}=must-not-load\\n`, { mode: 0o600 });
+    try {
+      fs.symlinkSync(path.join(outside, 'foreign.env'), envFile);
+    } catch {
+      t.skip('Symlink creation is unavailable on this platform.');
+      return;
+    }
+    delete process.env[key];
+    process.chdir(root);
+    assert.throws(() => ConfigManager.init(), /workspace \.env.*symbolic link/i);
+    assert.equal(process.env[key], undefined, 'secret-like values from a symlink target must not enter process.env');
+  } finally {
+    process.chdir(originalCwd);
+    if (previousValue === undefined) delete process.env[key];
+    else process.env[key] = previousValue;
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
 test('global config initialization refuses to follow a symlink', (t) => {
   const root = makeTempDir();
   const configDir = path.join(root, '.vertexcli');
