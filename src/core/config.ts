@@ -39,23 +39,70 @@ export class ConfigManager {
         // 1. Load local .env if the user is explicitly developing VERTEX
         dotenv.config();
 
-        // 2. Ensure global OS directory securely exists
+        // 2. Ensure the config directory is a real, private directory.
         const dir = path.dirname(this.globalConfigPath);
-        if (!fs.existsSync(dir)) {
-            // mode 0o700 ensures ONLY the current user can read/write this directory
-            fs.mkdirSync(dir, { recursive: true, mode: 0o700 }); 
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const dirStat = fs.lstatSync(dir);
+        if (dirStat.isSymbolicLink() || !dirStat.isDirectory()) {
+            throw new Error('Refusing to use the global config directory because it is a symbolic link or not a directory.');
         }
-        
-        // 3. Initialize config.json if it doesn't exist
-        if (!fs.existsSync(this.globalConfigPath)) {
-            fs.writeFileSync(this.globalConfigPath, JSON.stringify(this.defaultConfig(), null, 2), { mode: 0o600 }); // strict permissions
-        } else {
+        if (process.platform !== 'win32' && (dirStat.mode & 0o077) !== 0) {
+            fs.chmodSync(dir, 0o700);
+        }
+
+        // 3. Never read or write through a pre-existing symlink/non-file config path.
+        let configExists = true;
+        try {
+            const configStat = fs.lstatSync(this.globalConfigPath);
+            if (configStat.isSymbolicLink()) {
+                throw new Error('Refusing to use the global config path because it is a symbolic link.');
+            }
+            if (!configStat.isFile()) {
+                throw new Error('Refusing to use the global config path because it is not a regular file.');
+            }
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+                configExists = false;
+            } else {
+                throw error;
+            }
+        }
+
+        if (!configExists) {
+            try {
+                fs.writeFileSync(
+                    this.globalConfigPath,
+                    JSON.stringify(this.defaultConfig(), null, 2),
+                    { encoding: 'utf8', flag: 'wx', mode: 0o600 }
+                );
+            } catch (error) {
+                // If another process won the create race, inspect its path before using it.
+                if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+                const racedStat = fs.lstatSync(this.globalConfigPath);
+                if (racedStat.isSymbolicLink() || !racedStat.isFile()) {
+                    throw new Error('Refusing to use the global config path after an unsafe concurrent create.');
+                }
+                configExists = true;
+            }
+        }
+
+        if (configExists) {
+            const configStat = fs.lstatSync(this.globalConfigPath);
+            if (configStat.isSymbolicLink() || !configStat.isFile()) {
+                throw new Error('Refusing to use an unsafe global config path.');
+            }
+            if (process.platform !== 'win32') fs.chmodSync(this.globalConfigPath, 0o600);
             try {
                 const current = JSON.parse(fs.readFileSync(this.globalConfigPath, 'utf-8'));
-                const merged = { ...this.defaultConfig(), ...current };
-                fs.writeFileSync(this.globalConfigPath, JSON.stringify(merged, null, 2), { mode: 0o600 });
+                if (current && typeof current === 'object' && !Array.isArray(current)) {
+                    const merged = { ...this.defaultConfig(), ...current };
+                    fs.writeFileSync(this.globalConfigPath, JSON.stringify(merged, null, 2), {
+                        encoding: 'utf8',
+                        mode: 0o600
+                    });
+                }
             } catch {
-                // Keep existing file if parsing fails
+                // Keep an invalid existing file untouched so diagnostics can explain the problem.
             }
         }
 
