@@ -38,6 +38,16 @@ Table of Contents
 
 > Note: Docker is optional for basic CLI features but required for safe sandboxed runs. Ensure Docker daemon is running before using `/sandbox` functionality.
 
+### One-command global install from GitHub
+
+After the CLI packaging changes are merged into `main`, install VERTEX globally without cloning the repository yourself:
+
+```bash
+npm install -g git+https://github.com/vimalspaceton618-afk/vertex.git#main
+vertex --version
+vertex
+```
+
 ### Install a global `vertex` command (macOS / Linux)
 
 ```bash
