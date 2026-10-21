@@ -65,6 +65,8 @@ jobs:
         run: npm ci
       - name: Pack and install VERTEX globally
         shell: bash
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
         run: |
           npm pack --json --ignore-scripts > pack.json
           PACKAGE_FILE="$(node -e 'const p = JSON.parse(require("node:fs").readFileSync("pack.json", "utf8"))[0]; process.stdout.write(p.filename)')"
