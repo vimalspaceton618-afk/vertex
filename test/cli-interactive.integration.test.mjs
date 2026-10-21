@@ -75,6 +75,7 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
     USERPROFILE: home,
     TERM: 'xterm-256color',
     FORCE_COLOR: '0',
+    CI: 'false',
     VERTEX_WORKSPACE_ROOT: cwd
   };
 
