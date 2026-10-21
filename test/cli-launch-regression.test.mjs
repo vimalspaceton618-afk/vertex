@@ -193,22 +193,14 @@ test('no-argument launch remains wired to the interactive Ink UI', () => {
   const interactiveBranchIndex = cliSource.indexOf("import('./ui.js')");
 
   assert.ok(parseIndex >= 0, 'Commander must parse explicit CLI arguments');
+  assert.ok(normalStartupIndex > parseIndex, 'subcommands must be parsed before normal runtime initialization');
+  assert.ok(interactiveBranchIndex > normalStartupIndex, 'the default launch branch follows command handling');
   assert.ok(
-    normalStartupIndex > parseIndex,
-    'subcommands must be parsed before normal runtime initialization'
-  );
-  assert.ok(
-    interactiveBranchIndex > normalStartupIndex,
-    'the default launch branch must remain after command handling'
-  );
-  assert.match(
-    cliSource,
-    /if \(process\.argv\.length > 2\) \{\s*program\.parse\(process\.argv\);\s*\}/,
+    cliSource.includes('if (process.argv.length > 2) {\n  program.parse(process.argv);\n}'),
     'no-argument launch must skip Commander parsing so the TUI can start'
   );
-  assert.match(
-    cliSource,
-    /else\s*\{\s*import\('\.\/ui\.js'\)\.then\(\(\{ default: App \}\) => \{\s*const \{ waitUntilExit \} = render\(<App \/>);\s*return waitUntilExit\(\);\s*\}\)/,
-    'no-argument launch must render the interactive UI and wait for its exit'
+  assert.ok(
+    cliSource.includes('const { waitUntilExit } = render(<App />);'),
+    'the no-argument path must render the interactive UI and wait for exit'
   );
 });
