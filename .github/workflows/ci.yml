@@ -45,3 +45,32 @@ jobs:
         shell: bash
         run: |
           node -e 'const a = require(process.env.RUNNER_TEMP + "/npm-audit.json"); const v = a.metadata?.vulnerabilities || {}; console.log("Dependency security gate:", JSON.stringify(v)); if ((v.high || 0) > 0 || (v.critical || 0) > 0) process.exit(1)'
+
+  global-install-smoke:
+    name: Global install smoke test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies and build
+        run: npm ci
+      - name: Pack and install VERTEX globally
+        shell: bash
+        run: |
+          npm pack --json --ignore-scripts > pack.json
+          PACKAGE_FILE="$(node -e 'const p = JSON.parse(require("node:fs").readFileSync("pack.json", "utf8"))[0]; process.stdout.write(p.filename)')"
+          if [ -z "$PACKAGE_FILE" ] || [ ! -f "$PACKAGE_FILE" ]; then
+            echo "npm pack did not produce the expected tarball" >&2
+            exit 1
+          fi
+          npm install --global "./$PACKAGE_FILE"
+          vertex --version
