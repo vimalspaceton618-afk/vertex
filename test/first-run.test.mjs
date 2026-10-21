@@ -186,6 +186,7 @@ test('doctor validates local provider URLs and never echoes embedded credentials
     });
     const serialized = JSON.stringify(report);
     assert.ok(report.items.some((item) => item.name === 'Local provider URL' && item.status === 'warn'));
+    assert.ok(report.items.some((item) => item.name === 'Model provider' && item.status === 'warn'), 'invalid local endpoints must not be reported as ready');
     assert.ok(report.items.some((item) => item.name === 'Cloud provider URL' && item.status === 'warn'));
     assert.doesNotMatch(serialized, /private-user|private-password|private\.invalid/);
   } finally {
