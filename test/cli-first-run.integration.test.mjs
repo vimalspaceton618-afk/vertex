@@ -96,3 +96,58 @@ test('CLI doctor does not echo credentials embedded in provider URLs', () => {
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('CLI init refuses a symlinked .env and preserves the link target', (t) => {
+  const workspace = makeTempDir();
+  const home = makeTempDir();
+  const outside = makeTempDir();
+  const envPath = path.join(workspace, '.env');
+  const target = path.join(outside, 'credentials.env');
+  const original = 'OPENAI_API_KEY=do-not-touch-this\n';
+  try {
+    fs.writeFileSync(target, original, { mode: 0o600 });
+    try {
+      fs.symlinkSync(target, envPath);
+    } catch {
+      t.skip('Symlink creation is unavailable on this platform.');
+      return;
+    }
+    const result = runCli(['init'], workspace, home);
+    assert.equal(result.status, 1, 'init should not report success when .env already exists as a symlink');
+    assert.equal(fs.readFileSync(target, 'utf8'), original);
+    assert.equal(fs.lstatSync(envPath).isSymbolicLink(), true);
+    assert.equal(fs.existsSync(path.join(home, '.vertexcli', 'config.json')), false);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('CLI doctor warns on a symlinked workspace .env without reading its secret', (t) => {
+  const workspace = makeTempDir();
+  const home = makeTempDir();
+  const outside = makeTempDir();
+  const envPath = path.join(workspace, '.env');
+  const secret = 'symlink-secret-must-not-load';
+  try {
+    fs.writeFileSync(path.join(outside, 'foreign.env'), 'OPENAI_API_KEY=' + secret + '\n', { mode: 0o600 });
+    try {
+      fs.symlinkSync(path.join(outside, 'foreign.env'), envPath);
+    } catch {
+      t.skip('Symlink creation is unavailable on this platform.');
+      return;
+    }
+    const result = runCli(['doctor', '--json'], workspace, home);
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.ok(report.items.some((item) => item.name === 'Workspace .env' && item.status === 'warn'));
+    assert.ok(report.items.some((item) => item.name === 'Model provider' && item.status === 'warn'));
+    assert.doesNotMatch(result.stdout, new RegExp(secret));
+    assert.equal(fs.existsSync(path.join(home, '.vertexcli', 'config.json')), false);
+  } finally {
+    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
