@@ -59,7 +59,7 @@ test('doctor reports environment state without exposing credential values', () =
     });
     const text = formatDiagnosticReport(report);
     assert.equal(report.ok, true);
-    assert.match(text, /Node\.js.*PASS/);
+    assert.match(text, /\[PASS\] Node\.js/);
     assert.match(text, /Model provider.*configured/i);
     assert.doesNotMatch(text, new RegExp(secret));
     assert.doesNotMatch(JSON.stringify(report), new RegExp(secret));
