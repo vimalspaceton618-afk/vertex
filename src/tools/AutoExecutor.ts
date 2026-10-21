@@ -91,6 +91,7 @@ export class AutoExecutorTool implements Tool {
                 const { stdout, stderr } = await execAsync(args.generatedCommand, { timeout: 30000, signal });
                 return stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
             } catch (e: any) {
+                if (signal?.aborted) return '[HOST EXEC CANCELLED]';
                 return `[HOST EXEC ERROR]: ${e.message}`;
             }
         } else if (args.executionTarget === 'sandbox') {
@@ -111,6 +112,7 @@ export class AutoExecutorTool implements Tool {
                 );
                 return stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
             } catch (e: any) {
+                if (signal?.aborted) return '[REMOTE EXEC CANCELLED]';
                 return `[REMOTE EXEC ERROR]: ${e.message}`;
             }
         }
