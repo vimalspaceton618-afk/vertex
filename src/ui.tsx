@@ -42,6 +42,7 @@ function TrustGate({ trustCursor }: { trustCursor: number }) {
 }
 
 const COMMANDS = [
+  { name: '/help', desc: 'Show available commands and shortcuts' },
   { name: '/clear', desc: 'Clear history' },
   { name: '/health', desc: 'System status report' },
   { name: '/scope', desc: 'View current policy boundaries' },
@@ -49,20 +50,22 @@ const COMMANDS = [
   { name: '/sandbox', desc: 'Run command in isolated Docker' },
   { name: '/safe-sandbox', desc: 'Run safety research command in Docker' },
   { name: '/audit', desc: 'Run security audit on path' },
-  { name: '/nyx', desc: 'Offensive operations with NyxAgent' },
-  { name: '/phantom', desc: 'Full-spectrum red team with PhantomAgent' },
-  { name: '/sentinel', desc: 'Blue team defense & forensics with SentinelAgent' },
-  { name: '/recon', desc: 'Reconnaissance with ReconAgent' },
-  { name: '/loot', desc: 'Query encrypted LootStore credential vault' },
-  { name: '/attack-graph', desc: 'View MITRE ATT&CK kill-chain graph & pivots' },
-  { name: '/search', desc: 'Search the web using DuckDuckGo' },
-  { name: '/open', desc: 'Browse target URL' },
-  { name: '/goal', desc: 'Run autonomously until goal is achieved' },
-  { name: '/schedule', desc: 'Schedule a recurring command execution' },
-  { name: '/grill-me', desc: 'Interactive requirements interview' },
+  { name: '/nyx', desc: 'Run NyxAgent security operations' },
+  { name: '/phantom', desc: 'Run PhantomAgent red-team workflow' },
+  { name: '/sentinel', desc: 'Run SentinelAgent defense workflow' },
+  { name: '/recon', desc: 'Run ReconAgent reconnaissance workflow' },
+  { name: '/loot', desc: 'Query the encrypted LootStore' },
+  { name: '/attack-graph', desc: 'View ATT&CK graph and pivots' },
+  { name: '/search', desc: 'Search the web: /search <query>' },
+  { name: '/open', desc: 'Open a URL: /open <url>' },
+  { name: '/summarize-url', desc: 'Summarize a URL: /summarize-url <url>' },
+  { name: '/screenshot-url', desc: 'Save a URL screenshot' },
+  { name: '/goal', desc: 'Run a bounded autonomous goal: /goal <task>' },
+  { name: '/schedule', desc: 'Schedule a command: /schedule <...>' },
+  { name: '/grill-me', desc: 'Interview to clarify task requirements' },
   { name: '/learn', desc: 'Extract and save learned rules' },
-  { name: '/skill', desc: 'Query databases (ncbi, uniprot, pubchem, pubmed, arxiv)' },
-  { name: '/gpu', desc: 'Provision, status, logs, ssh, or destroy GPU jobs' }
+  { name: '/skill', desc: 'Query science databases: /skill <...>' },
+  { name: '/gpu', desc: 'Manage GPU jobs: /gpu <action>' }
 ];
 
 function ActiveStreamView({ content, role }: { content: string; role: 'user' | 'assistant' }) {
