@@ -53,7 +53,12 @@ export class TcpScanTool implements Tool {
         additionalProperties: false
     };
 
-    async execute(args: { target: string; ports: string; timeout?: number; concurrency?: number }): Promise<string> {
+    async execute(
+        args: { target: string; ports: string; timeout?: number; concurrency?: number },
+        _requestConfirmation?: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
+    ): Promise<string> {
+        if (signal?.aborted) return '[TCP SCAN CANCELLED]';
         const timeout = args.timeout ?? 2000;
         const concurrency = Math.min(args.concurrency ?? 100, 500);
         const ports = shuffle(parsePorts(args.ports));
@@ -62,10 +67,20 @@ export class TcpScanTool implements Tool {
         if (ports.length > 10000) return '[TCP SCAN ERROR]: Port range too large (max 10000).';
 
         const results: { port: number; status: string; banner?: string }[] = [];
-        let idx = 0;
+        const activeSockets = new Set<net.Socket>();
+        const abortSockets = () => {
+            for (const socket of activeSockets) socket.destroy();
+        };
+        signal?.addEventListener('abort', abortSockets, { once: true });
 
         const scanPort = (port: number): Promise<void> => new Promise(resolve => {
+            if (signal?.aborted) {
+                resolve();
+                return;
+            }
             const sock = new net.Socket();
+            activeSockets.add(sock);
+            sock.once('close', () => activeSockets.delete(sock));
             let banner = '';
             sock.setTimeout(timeout);
 
@@ -110,12 +125,19 @@ export class TcpScanTool implements Tool {
             });
         });
 
-        // Batch execution
+        // Batch execution. Abort closes current sockets and prevents additional batches.
         const batches = Math.ceil(ports.length / concurrency);
-        for (let b = 0; b < batches; b++) {
-            const batch = ports.slice(b * concurrency, (b + 1) * concurrency);
-            await Promise.all(batch.map(p => scanPort(p)));
+        try {
+            for (let b = 0; b < batches; b++) {
+                if (signal?.aborted) return '[TCP SCAN CANCELLED]';
+                const batch = ports.slice(b * concurrency, (b + 1) * concurrency);
+                await Promise.all(batch.map(p => scanPort(p)));
+            }
+        } finally {
+            signal?.removeEventListener('abort', abortSockets);
+            abortSockets();
         }
+        if (signal?.aborted) return '[TCP SCAN CANCELLED]';
 
         // Deduplicate
         const seen = new Set<number>();
