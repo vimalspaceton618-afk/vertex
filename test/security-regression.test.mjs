@@ -166,6 +166,19 @@ test('agent retry delay completes normally and handles an already-aborted signal
   assert.equal(await waitForRetryDelay(60_000, controller.signal), false);
 });
 
+test('daemon abort controller observes a request already aborted before setup', () => {
+  const request = new EventEmitter();
+  const response = new EventEmitter();
+  request.aborted = true;
+  response.writableFinished = false;
+
+  const { controller, cleanup } = createDaemonAbortController(request, response);
+  assert.equal(controller.signal.aborted, true);
+  cleanup();
+  assert.equal(request.listenerCount('aborted'), 0);
+  assert.equal(response.listenerCount('close'), 0);
+});
+
 test('daemon abort controller does not cancel completed responses', () => {
   const request = new EventEmitter();
   const response = new EventEmitter();
