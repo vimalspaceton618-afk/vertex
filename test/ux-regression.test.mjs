@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import path from 'node:path';
-
-const read = (file) => fs.readFileSync(new URL(file, import.meta.url), 'utf8');
 const ui = fs.readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
 const components = fs.readFileSync(new URL('../src/components.tsx', import.meta.url), 'utf8');
 
