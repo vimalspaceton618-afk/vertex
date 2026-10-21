@@ -380,7 +380,7 @@ export abstract class BaseAgent {
                         }
                         try {
                             const args = JSON.parse(toolCall.function.arguments);
-                            const executionResult = await awaitWithAbort(tool.execute(args, requestConfirmation, signal), signal);
+                            const executionResult = await awaitWithAbort<string | AsyncGenerator<string, string, unknown>>(tool.execute(args, requestConfirmation, signal), signal);
                             let resultStr = '';
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
                                 for await (const chunk of iterateWithAbort(executionResult as AsyncIterable<string>, signal)) {
@@ -416,7 +416,7 @@ export abstract class BaseAgent {
                     if (tool) {
                         try {
                             const args = JSON.parse(toolCall.function.arguments);
-                            const executionResult = await awaitWithAbort(tool.execute(args, requestConfirmation, signal), signal);
+                            const executionResult = await awaitWithAbort<string | AsyncGenerator<string, string, unknown>>(tool.execute(args, requestConfirmation, signal), signal);
                             if (signal?.aborted) break;
                             if (executionResult && typeof (executionResult as any)[Symbol.asyncIterator] === 'function') {
                                 for await (const chunk of iterateWithAbort(executionResult as AsyncIterable<string>, signal)) {
