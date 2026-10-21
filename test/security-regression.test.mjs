@@ -284,3 +284,111 @@ test('daemon HTTP boundary rejects malformed, oversized, wrong-type, and cross-o
   }
 });
 
+
+
+test('daemon client disconnect aborts an active OpenAI-compatible streaming request', async () => {
+  if (daemonServer.listening) throw new Error('Daemon server unexpectedly already listening');
+
+  let resolveUpstreamClose;
+  const upstreamClosed = new Promise((resolve) => {
+    resolveUpstreamClose = resolve;
+  });
+  const modelServer = http.createServer((request, response) => {
+    request.resume();
+    request.on('end', () => {
+      response.on('close', () => {
+        if (!response.writableEnded) resolveUpstreamClose();
+      });
+      response.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      });
+      response.flushHeaders();
+      response.write('data: ' + JSON.stringify({
+        id: 'chatcmpl-cancellation-test',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'mock-cancel-test',
+        choices: [{ index: 0, delta: { role: 'assistant', content: 'working' }, finish_reason: null }]
+      }) + '\n\n');
+    });
+  });
+
+  const envKeys = ['OPENAI_BASE_URL', 'OPENAI_API_KEY', 'AI_MODEL', 'BRAIN_MODE', 'BRAIN_ROUTING_MAP'];
+  const oldEnv = Object.fromEntries(envKeys.map((key) => [key, process.env[key]]));
+  let clientRequest;
+  let waitTimer;
+  try {
+    await new Promise((resolve, reject) => {
+      modelServer.once('error', reject);
+      modelServer.listen(0, '127.0.0.1', resolve);
+    });
+    const modelAddress = modelServer.address();
+    assert.ok(modelAddress && typeof modelAddress === 'object');
+
+    process.env.OPENAI_BASE_URL = `http://127.0.0.1:${modelAddress.port}/v1`;
+    process.env.OPENAI_API_KEY = 'test-only-cancellation-key';
+    process.env.AI_MODEL = 'mock-cancel-test';
+    process.env.BRAIN_MODE = 'cloud';
+    delete process.env.BRAIN_ROUTING_MAP;
+
+    await new Promise((resolve, reject) => {
+      daemonServer.once('error', reject);
+      daemonServer.listen(0, '127.0.0.1', resolve);
+    });
+    const daemonAddress = daemonServer.address();
+    assert.ok(daemonAddress && typeof daemonAddress === 'object');
+
+    const firstDownstreamChunk = new Promise((resolve, reject) => {
+      let receivedChunk = false;
+      clientRequest = http.request({
+        host: '127.0.0.1',
+        port: daemonAddress.port,
+        path: '/run',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }, (response) => {
+        response.on('data', () => {
+          if (receivedChunk) return;
+          receivedChunk = true;
+          clientRequest.destroy();
+          resolve();
+        });
+      });
+      clientRequest.on('error', (error) => {
+        if (!receivedChunk) reject(error);
+      });
+      clientRequest.end(JSON.stringify({ prompt: 'Say one short greeting.' }));
+    });
+
+    await Promise.race([
+      firstDownstreamChunk,
+      new Promise((_, reject) => {
+        waitTimer = setTimeout(() => reject(new Error('Daemon did not begin streaming within 3 seconds')), 3000);
+      })
+    ]);
+    clearTimeout(waitTimer);
+    waitTimer = undefined;
+
+    await Promise.race([
+      upstreamClosed,
+      new Promise((_, reject) => {
+        waitTimer = setTimeout(() => reject(new Error('Client disconnect did not abort the upstream model stream')), 3000);
+      })
+    ]);
+  } finally {
+    if (waitTimer) clearTimeout(waitTimer);
+    clientRequest?.destroy();
+    for (const key of envKeys) {
+      if (oldEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = oldEnv[key];
+    }
+    if (daemonServer.listening) {
+      await new Promise((resolve, reject) => daemonServer.close((error) => error ? reject(error) : resolve()));
+    }
+    if (modelServer.listening) {
+      await new Promise((resolve, reject) => modelServer.close((error) => error ? reject(error) : resolve()));
+    }
+  }
+});
