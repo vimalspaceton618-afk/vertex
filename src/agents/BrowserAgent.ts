@@ -173,6 +173,7 @@ class BrowserSearchTool extends Tool {
 
 export class BrowserAgent extends BaseAgent {
     private static browser: Browser | null = null;
+    private static browserLaunch: Promise<Browser> | null = null;
     private static page: Page | null = null;
 
     constructor() {
@@ -193,39 +194,49 @@ export class BrowserAgent extends BaseAgent {
         this.registry.register(new BrowserSearchTool(this));
     }
 
-    public async ensurePage(): Promise<Page> {
+    private async ensureBrowser(): Promise<Browser> {
         if (BrowserAgent.browser && !BrowserAgent.browser.connected) {
             BrowserAgent.browser = null;
+            BrowserAgent.browserLaunch = null;
             BrowserAgent.page = null;
         }
         if (!BrowserAgent.browser) {
+            if (!BrowserAgent.browserLaunch) {
+                BrowserAgent.browserLaunch = (async () => {
+                    const candidates = getBrowserCandidates();
+                    const options = {
+                        headless: true as const,
+                        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check']
+                    };
+                    try {
+                        const browser = candidates.length
+                            ? await puppeteer.launch({ ...options, executablePath: candidates[0] })
+                            : await puppeteer.launch(options);
+                        // Prevent browser child process from holding headless CLI open.
+                        browser.process()?.unref();
+                        return browser;
+                    } catch (error: any) {
+                        const candidateNote = candidates.length
+                            ? `Detected browser executable candidates:\n- ${candidates.join('\n- ')}`
+                            : 'No browser executable candidates detected. Set PUPPETEER_EXECUTABLE_PATH in ~/.vertexcli/config.json or .env.';
+                        throw new Error(`Browser launch failed: ${error.message}\n${candidateNote}`);
+                    }
+                })();
+            }
             try {
-                const candidates = getBrowserCandidates();
-                if (candidates.length > 0) {
-                    BrowserAgent.browser = await puppeteer.launch({
-                        headless: true,
-                        executablePath: candidates[0],
-                        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check']
-                    });
-                } else {
-                    BrowserAgent.browser = await puppeteer.launch({
-                        headless: true,
-                        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check']
-                    });
-                }
-                // Prevent browser child process from holding headless CLI open.
-                BrowserAgent.browser.process()?.unref();
-            } catch (error: any) {
-                const candidates = getBrowserCandidates();
-                const candidateNote = candidates.length
-                    ? `Detected browser executable candidates:\n- ${candidates.join('\n- ')}`
-                    : 'No browser executable candidates detected. Set PUPPETEER_EXECUTABLE_PATH in ~/.vertexcli/config.json or .env.';
-                throw new Error(`Browser launch failed: ${error.message}\n${candidateNote}`);
+                BrowserAgent.browser = await BrowserAgent.browserLaunch;
+            } finally {
+                BrowserAgent.browserLaunch = null;
             }
         }
+        return BrowserAgent.browser;
+    }
+
+    public async ensurePage(): Promise<Page> {
+        const browser = await this.ensureBrowser();
         if (!BrowserAgent.page || BrowserAgent.page.isClosed()) {
-            BrowserAgent.page = await BrowserAgent.browser.newPage();
-            await BrowserAgent.page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36');
+            BrowserAgent.page = await browser.newPage();
+            await BrowserAgent.page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/124 Safari/537.36');
             await BrowserAgent.page.setViewport({ width: 1365, height: 900 });
         }
         return BrowserAgent.page;
@@ -237,8 +248,7 @@ export class BrowserAgent extends BaseAgent {
      */
     private async withTaskPage<T>(signal: AbortSignal | undefined, operation: (page: Page) => Promise<T>): Promise<T> {
         if (signal?.aborted) throw new Error('Browser task cancelled.');
-        await this.ensurePage();
-        const browser = BrowserAgent.browser;
+        const browser = await this.ensureBrowser();
         if (!browser || !browser.connected) throw new Error('Browser is not connected.');
 
         const page = await browser.newPage();
