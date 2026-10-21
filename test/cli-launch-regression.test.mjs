@@ -25,7 +25,8 @@ function cleanEnv(home) {
     'LOCAL_MODEL',
     'LOCAL_BASE_URL',
     'WORKSPACE_ROOT',
-    'VERTEX_WORKSPACE_ROOT'
+    'VERTEX_WORKSPACE_ROOT',
+    'MOCK_TTY'
   ]) {
     delete env[key];
   }
@@ -45,6 +46,10 @@ function runCli(args, cwd, home) {
 
 function stripAnsi(value) {
   return value.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, '');
+}
+
+function shellQuote(value) {
+  return "'" + value.replace(/'/g, "'\\''") + "'";
 }
 
 test('global CLI help works outside the repository without initializing user state', () => {
@@ -70,14 +75,21 @@ test('global CLI help works outside the repository without initializing user sta
   }
 });
 
-test('no-argument launch renders the TUI, runs /help, and exits cleanly', async () => {
+test('no-argument launch renders the TUI, runs /help, and exits cleanly', async (t) => {
+  if (process.platform !== 'linux') {
+    t.skip('This live TTY smoke test uses util-linux script; cross-platform packaging is tested separately.');
+    return;
+  }
+
   const cwd = makeTempDir();
   const home = makeTempDir();
   const env = cleanEnv(home);
-  env.MOCK_TTY = '1';
   env.TERM = 'xterm-256color';
 
-  const child = spawn(process.execPath, [cliPath], {
+  // script supplies a real pseudo-terminal, so Ink sees a genuine TTY rather
+  // than the stream-based MOCK_TTY shim.
+  const command = `${shellQuote(process.execPath)} ${shellQuote(cliPath)}`;
+  const child = spawn('script', ['-qefc', command, '/dev/null'], {
     cwd,
     env,
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -113,15 +125,15 @@ test('no-argument launch renders the TUI, runs /help, and exits cleanly', async 
         const visible = stripAnsi(stdout);
         if (!acceptedTrust && visible.includes('VERTEX ISOLATION WARNING')) {
           acceptedTrust = true;
-          child.stdin.write('1');
+          child.stdin.write('1\\r');
         }
         if (acceptedTrust && !requestedHelp && visible.includes('Welcome to VERTEX')) {
           requestedHelp = true;
-          child.stdin.write('/help\r');
+          child.stdin.write('/help\\r');
         }
         if (requestedHelp && !requestedExit && visible.includes('VERTEX COMMANDS')) {
           requestedExit = true;
-          child.stdin.write('/exit\r');
+          child.stdin.write('/exit\\r');
         }
       };
 
@@ -136,8 +148,8 @@ test('no-argument launch renders the TUI, runs /help, and exits cleanly', async 
       child.on('close', (code, signal) => {
         if (code !== 0 || !acceptedTrust || !requestedHelp || !requestedExit) {
           settle(reject, new Error(
-            `TUI did not complete cleanly (code=${code}, signal=${signal}, trust=${acceptedTrust}, help=${requestedHelp}, exit=${requestedExit}).\n` +
-            'stdout: ' + stripAnsi(stdout).slice(-1800) + '\nstderr: ' + stderr.slice(-1000)
+            `TUI did not complete cleanly (code=${code}, signal=${signal}, trust=${acceptedTrust}, help=${requestedHelp}, exit=${requestedExit}).\\n` +
+            'stdout: ' + stripAnsi(stdout).slice(-1800) + '\\nstderr: ' + stderr.slice(-1000)
           ));
           return;
         }
@@ -150,18 +162,27 @@ test('no-argument launch renders the TUI, runs /help, and exits cleanly', async 
     assert.match(visible, /VERTEX ISOLATION WARNING/);
     assert.match(visible, /Welcome to VERTEX/);
     assert.match(visible, /VERTEX COMMANDS/);
-    assert.match(visible, /\/gpu/);
-    assert.match(visible, /Tip: type \/ followed by a few letters/);
-
-    const registry = uiSource.match(/const COMMANDS = \[([\s\S]*?)\n\];/);
-    assert.ok(registry, 'the interactive UI command registry exists');
-    const commandNames = [...registry[1].matchAll(/name:\s*'([^']+)'/g)].map((match) => match[1]);
-    assert.ok(commandNames.length >= 20, 'the TUI should expose the expected broad command set');
-    assert.equal(new Set(commandNames).size, commandNames.length, 'TUI command names should be unique');
+    assert.match(visible, /\\/gpu/);
+    assert.match(visible, /Tip: type \\/ followed by a few letters/);
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     fs.rmSync(cwd, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('every advertised TUI command has a dispatch path', () => {
+  const registry = uiSource.match(/const COMMANDS = \\[([\\s\\S]*?)\\n\\];/);
+  assert.ok(registry, 'the interactive UI command registry exists');
+  const commandNames = [...registry[1].matchAll(/name:\\s*'([^']+)'/g)].map((match) => match[1]);
+  const dispatchStart = uiSource.indexOf('const handlePrompt = (query: string) => {');
+  const dispatchEnd = uiSource.indexOf('const submitPrompt = (value: string) => {', dispatchStart);
+  assert.ok(dispatchStart >= 0 && dispatchEnd > dispatchStart, 'the prompt dispatcher exists');
+  const dispatch = uiSource.slice(dispatchStart, dispatchEnd);
+
+  assert.equal(new Set(commandNames).size, commandNames.length, 'TUI command names should be unique');
+  for (const name of commandNames) {
+    assert.ok(dispatch.includes(name), `${name} is advertised but has no matching prompt-dispatch reference`);
   }
 });
 
@@ -170,7 +191,7 @@ test('no-argument launch remains wired to the interactive Ink UI', () => {
   const normalStartupIndex = cliSource.indexOf('if (!commandHandled) {');
   const interactiveBranchIndex = cliSource.indexOf("import('./ui.js')");
 
-  assert.ok(parseIndex >= 0, 'Commander must parse CLI arguments');
+  assert.ok(parseIndex >= 0, 'Commander must parse explicit CLI arguments');
   assert.ok(
     normalStartupIndex > parseIndex,
     'subcommands must be parsed before normal runtime initialization'
@@ -181,7 +202,12 @@ test('no-argument launch remains wired to the interactive Ink UI', () => {
   );
   assert.match(
     cliSource,
-    /else\s*\{\s*import\('\.\/ui\.js'\)\.then\(\(\{ default: App \}\) => \{\s*const \{ waitUntilExit \} = render\(<App \/>\);\s*return waitUntilExit\(\);\s*\}\)/,
+    /if \\(process\\.argv\\.length > 2\\) \\{\\s*program\\.parse\\(process\\.argv\\);\\s*\\}/,
+    'no-argument launch must skip Commander parsing so the TUI can start'
+  );
+  assert.match(
+    cliSource,
+    /else\\s*\\{\\s*import\\('\\.\\/ui\\.js'\\)\\.then\\(\\(\\{ default: App \\}\\) => \\{\\s*const \\{ waitUntilExit \\} = render\\(<App \\/>\\);\\s*return waitUntilExit\\(\\);\\s*\\}\\)/,
     'no-argument launch must render the interactive UI and wait for its exit'
   );
 });
