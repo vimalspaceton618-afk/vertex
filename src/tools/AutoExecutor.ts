@@ -63,7 +63,8 @@ export class AutoExecutorTool implements Tool {
 
     async execute(
         args: { generatedCommand: string; executionTarget: 'host' | 'sandbox' | 'remote'; remoteOptions?: { host?: string; user?: string; auth?: string } },
-        requestConfirmation: (msg: string) => Promise<boolean>
+        requestConfirmation: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
     ): Promise<string> {
         if (args.executionTarget === 'remote') {
             if (!args.remoteOptions?.host || !args.remoteOptions?.user) {
@@ -83,17 +84,18 @@ export class AutoExecutorTool implements Tool {
             targets
         }, requestConfirmation);
         if (policyBlock) return policyBlock;
+        if (signal?.aborted) return '[EXEC CANCELLED]: Request was cancelled before execution.';
 
         if (args.executionTarget === 'host') {
             try {
-                const { stdout, stderr } = await execAsync(args.generatedCommand, { timeout: 30000 });
+                const { stdout, stderr } = await execAsync(args.generatedCommand, { timeout: 30000, signal });
                 return stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
             } catch (e: any) {
                 return `[HOST EXEC ERROR]: ${e.message}`;
             }
         } else if (args.executionTarget === 'sandbox') {
             const sandbox = new DockerSandboxTool();
-            return sandbox.execute({ command: args.generatedCommand }, requestConfirmation);
+            return sandbox.execute({ command: args.generatedCommand }, requestConfirmation, signal);
         } else if (args.executionTarget === 'remote') {
             if (!args.remoteOptions?.host || !args.remoteOptions?.user) {
                 return '[REMOTE EXEC ERROR]: Missing remoteOptions (host, user).';
@@ -105,7 +107,7 @@ export class AutoExecutorTool implements Tool {
                 const { stdout, stderr } = await execFileAsync(
                     'ssh',
                     ['-o', 'BatchMode=yes', '--', sshTarget, args.generatedCommand],
-                    { timeout: 30000 }
+                    { timeout: 30000, signal }
                 );
                 return stdout + (stderr ? `\nSTDERR:\n${stderr}` : '');
             } catch (e: any) {
@@ -140,7 +142,8 @@ export class ToolPipelineTool implements Tool {
 
     async execute(
         args: { pipeline: string; initialInput?: string },
-        requestConfirmation: (msg: string) => Promise<boolean>
+        requestConfirmation: (msg: string) => Promise<boolean>,
+        signal?: AbortSignal
     ): Promise<string> {
         const policyBlock = await enforceToolPolicy({
             toolName: this.name,
@@ -155,6 +158,7 @@ export class ToolPipelineTool implements Tool {
         let pipelineOutput = '';
 
         for (const toolName of tools) {
+            if (signal?.aborted) return pipelineOutput + '\n[PIPELINE CANCELLED]';
             const tool = this.registry.getTool(toolName);
             if (!tool) {
                 return `[PIPELINE ERROR]: Tool not found: ${toolName}`;
@@ -171,11 +175,13 @@ export class ToolPipelineTool implements Tool {
                     else if (props.length > 0) toolArgs[props[0]] = currentInput;
                 }
 
-                const result = await tool.execute(toolArgs, requestConfirmation);
+                const result = await tool.execute(toolArgs, requestConfirmation, signal);
+                if (signal?.aborted) return pipelineOutput + '\n[PIPELINE CANCELLED]';
                 
                 if (typeof result !== 'string') {
                     let genOutput = '';
                     for await (const chunk of result) {
+                        if (signal?.aborted) return pipelineOutput + '\n[PIPELINE CANCELLED]';
                         genOutput += chunk;
                     }
                     currentInput = genOutput;
