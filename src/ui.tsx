@@ -7,12 +7,10 @@ import { NcbiFetchTool, UniProtFetchTool, PubChemSearchTool, PubMedSearchTool, A
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { collectDiagnostics, formatDiagnosticReport } from './core/diagnostics.js';
 import { initializeWorkspaceConfig } from './core/setup.js';
-import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
+import { describeScope } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
 import { VertexHeader, AgentStatusMonitor, PermissionPrompt, TaskResultSummary, type TaskLifecycleStatus } from './components.js';
-
-ensureScopeFile();
 
 type HistoryMessage = { id: string; role: 'user' | 'assistant'; content: string };
 type ConfirmPrompt = { message: string; resolve: (value: boolean) => void };
