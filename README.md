@@ -1,7 +1,7 @@
 # VERTEX
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![npm version](https://img.shields.io/npm/v/vertex)]()
+[![npm version](https://img.shields.io/npm/v/vertex-cli)]()
 [![License](https://img.shields.io/badge/license-UNLICENSED-red)]()
 
 A terminal-native, agentic cybersecurity assistant for code, system auditing, and threat response.
@@ -32,34 +32,47 @@ Table of Contents
 ## Installation
 
 ### Prerequisites
-- Node.js: v20.x or higher (v22+ recommended). Use nvm to manage versions: `nvm install 22 && nvm use 22`
+- Node.js: v22.x or higher. Use nvm to manage versions: `nvm install 22 && nvm use 22`
 - Git
 - Docker (Optional but strongly recommended for sandboxed execution)
 
 > Note: Docker is optional for basic CLI features but required for safe sandboxed runs. Ensure Docker daemon is running before using `/sandbox` functionality.
 
-### Install (macOS / Linux)
+### One-command global install from GitHub
+
+After the CLI packaging changes are merged into `main`, install VERTEX globally without cloning the repository yourself:
+
+```bash
+npm install -g git+https://github.com/vimalspaceton618-afk/vertex.git#main
+vertex --version
+vertex
+```
+
+### Install a global `vertex` command (macOS / Linux)
+
 ```bash
 git clone https://github.com/vimalspaceton618-afk/vertex.git
 cd vertex
 npm ci
-npm run build
 npm link
+vertex --version
+vertex
 ```
 
-### Install (Windows - PowerShell)
+### Install a global `vertex` command (Windows - PowerShell)
+
 ```powershell
 git clone https://github.com/vimalspaceton618-afk/vertex.git
 cd vertex
 npm ci
-npm run build
 npm link
-```
-
-Run from anywhere:
-```bash
+vertex --version
 vertex
 ```
+
+The package exposes the `vertex` executable through npm's `bin` mapping. `npm ci` builds the CLI automatically, and `npm link` registers a global command that launches the interactive terminal UI from any directory. Keep the cloned repository in place while using this link.
+
+If PowerShell says `vertex` is not recognized, check the npm global prefix with `npm config get prefix`, ensure that directory is on your user `PATH`, then close and reopen the terminal. On macOS/Linux, check that the global npm prefix's `bin` directory is on `PATH` (for example, `$(npm config get prefix)/bin` for a standalone prefix).
 
 ---
 
