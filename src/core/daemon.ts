@@ -3,6 +3,7 @@ import { AgentManager } from './agent/AgentManager.js';
 
 let orchestrator: AgentManager | null = null;
 let daemonPort = 8899;
+const activeDaemonControllers = new Set<AbortController>();
 
 const MAX_REQUEST_BYTES = 64 * 1024;
 export const MAX_DAEMON_PROMPT_CHARS = 20_000;
@@ -164,6 +165,7 @@ export const daemonServer = http.createServer(async (req, res) => {
                 const confirm = async (_msg: string) => autoApprove;
 
                 const { controller, cleanup } = createDaemonAbortController(req, res);
+                activeDaemonControllers.add(controller);
                 try {
                     const stream = manager.delegateTask(prompt, confirm, controller.signal);
                     for await (const chunk of stream) {
@@ -173,6 +175,7 @@ export const daemonServer = http.createServer(async (req, res) => {
                     if (!res.destroyed) res.end();
                 } finally {
                     cleanup();
+                    activeDaemonControllers.delete(controller);
                 }
             } catch (e: any) {
                 if (res.headersSent) {
@@ -202,6 +205,24 @@ export const daemonServer = http.createServer(async (req, res) => {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Not found.');
 });
+
+/**
+ * Stop accepting daemon requests, abort active agent work, and close idle sockets.
+ * The returned promise resolves when the HTTP server has closed its connections.
+ */
+export function stopDaemon(): Promise<void> {
+    const closePromise = daemonServer.listening
+        ? new Promise<void>((resolve, reject) => {
+            daemonServer.close((error) => error ? reject(error) : resolve());
+        })
+        : Promise.resolve();
+
+    for (const controller of activeDaemonControllers) {
+        controller.abort();
+    }
+    daemonServer.closeIdleConnections();
+    return closePromise;
+}
 
 export function startDaemon(port = 8899) {
     daemonPort = port;
