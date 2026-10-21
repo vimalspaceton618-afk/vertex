@@ -84,7 +84,7 @@ test('doctor reports configuration state without exposing secret values', () => 
     });
     const output = JSON.stringify(report) + formatDiagnosticReport(report);
     assert.match(output, /Model provider/);
-    assert.match(output, /Provider URL/);
+    assert.match(output, /Cloud provider URL/);
     assert.doesNotMatch(output, new RegExp(secret));
     assert.equal(report.items.some((item) => item.name === 'Node.js' && item.status === 'pass'), true);
   } finally {
@@ -106,7 +106,7 @@ test('doctor warns on an invalid custom provider URL without echoing it', () => 
       checkGit: false,
       checkDocker: false
     });
-    const providerUrl = report.items.find((item) => item.name === 'Provider URL');
+    const providerUrl = report.items.find((item) => item.name === 'Cloud provider URL');
     assert.equal(providerUrl?.status, 'warn');
     assert.doesNotMatch(JSON.stringify(report), /file:\/\/\/tmp\/private-path/);
   } finally {
