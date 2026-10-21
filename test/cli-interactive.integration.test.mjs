@@ -64,7 +64,7 @@ function waitForExit(child, timeoutMs = 5_000) {
 }
 
 test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly', {
-  timeout: 25_000
+  timeout: 45_000
 }, async (t) => {
   const cwd = makeTempDir('vertex-tui-work-');
   const home = makeTempDir('vertex-tui-home-');
@@ -119,6 +119,50 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
 
   for (const command of ['/health', '/doctor', '/init', '/scope', '/sandbox', '/safe-sandbox', '/audit', '/search', '/gpu', '/skill']) {
     assert.ok(stdout.includes(command), `interactive help should list ${command}`);
+  }
+
+
+  const safeCommands = [
+    ['/health', 'VERTEX Health Check'],
+    ['/doctor', 'VERTEX Doctor'],
+    ['/scope', 'Scope file:'],
+    ['/init', 'Created '],
+    ['/loot stats', '[LOOT STORE STATS]'],
+    ['/attack-graph', '[ATTACK GRAPH'],
+    ['/gpu', 'GPU Commands:'],
+    ['/gpu logs', 'Usage: /gpu logs <instanceId>'],
+    ['/gpu destroy', 'Usage: /gpu destroy <instanceId>'],
+    ['/gpu deploy', 'Usage: /gpu deploy <script>'],
+    ['/schedule x /health', 'Usage: /schedule <seconds> <command>'],
+    ['/skill invalid sample', 'Unknown skill: invalid']
+  ];
+  for (const [command, expected] of safeCommands) {
+    child.stdin.write(command + String.fromCharCode(13));
+    await waitForOutput(child, () => stdout, expected, 8_000);
+  }
+
+  const missingArguments = [
+    ['/phantom', 'Usage: /phantom <red team prompt>'],
+    ['/recon', 'Usage: /recon <target>'],
+    ['/nyx', 'Usage: /nyx <offensive security prompt>'],
+    ['/search', 'Usage: /search <query>'],
+    ['/open', 'Usage: /open <url>'],
+    ['/summarize-url', 'Usage: /summarize-url <url>'],
+    ['/screenshot-url', 'Usage: /screenshot-url <url> [filePath]'],
+    ['/goal', 'Usage: /goal <objective>'],
+    ['/schedule', 'Usage: /schedule <seconds> <command>'],
+    ['/skill', 'Usage: /skill <ncbi|uniprot|pubchem|pubmed|arxiv> <query>'],
+    ['/safe-sandbox', 'Usage: /safe-sandbox'],
+    ['/sandbox', 'Usage: /sandbox <shell command>']
+  ];
+  for (const [command, expected] of missingArguments) {
+    child.stdin.write(command + String.fromCharCode(13));
+    await waitForOutput(child, () => stdout, expected, 8_000);
+  }
+
+  assert.equal(fs.existsSync(path.join(cwd, '.env')), true, '/init should create only the temporary workspace template');
+  if (process.platform !== 'win32') {
+    assert.equal(fs.statSync(path.join(cwd, '.env')).mode & 0o777, 0o600, '/init must use restrictive permissions');
   }
 
   child.stdin.write('/exit\r');
