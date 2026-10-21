@@ -5,6 +5,8 @@ import os from 'os';
 import { AgentManager } from './core/agent/AgentManager.js';
 import { NcbiFetchTool, UniProtFetchTool, PubChemSearchTool, PubMedSearchTool, ArxivSearchTool } from './tools/ScienceSkills.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
+import { collectDiagnostics, formatDiagnosticReport } from './core/diagnostics.js';
+import { initializeWorkspaceConfig } from './core/setup.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
@@ -45,6 +47,8 @@ const COMMANDS = [
   { name: '/help', desc: 'Show available commands and shortcuts' },
   { name: '/clear', desc: 'Clear history' },
   { name: '/health', desc: 'System status report' },
+  { name: '/doctor', desc: 'Check environment and local configuration safely' },
+  { name: '/init', desc: 'Create a private .env template without overwriting files' },
   { name: '/scope', desc: 'View current policy boundaries' },
   { name: '/exit', desc: 'Quit session' },
   { name: '/sandbox', desc: 'Run command in isolated Docker' },
@@ -503,6 +507,24 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
     if (lowerQuery === 'exit' || lowerQuery === 'quit' || lowerQuery === '/exit' || lowerQuery === '/quit') {
       exit();
+      return;
+    }
+
+    if (lowerQuery === '/doctor') {
+      setPromptValue('');
+      appendTurn(query, formatDiagnosticReport(collectDiagnostics()));
+      return;
+    }
+
+    if (lowerQuery === '/init') {
+      setPromptValue('');
+      try {
+        const result = initializeWorkspaceConfig(process.cwd());
+        appendTurn(query, result.message);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        appendTurn(query, `[INIT ERROR] ${message}`);
+      }
       return;
     }
 
