@@ -10,6 +10,7 @@ import { validateRemoteTarget } from '../dist/tools/AutoExecutor.js';
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
 import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
 import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer, createDaemonAbortController } from '../dist/core/daemon.js';
+import { waitForRetryDelay } from '../dist/core/agent/BaseAgent.js';
 import { toGraphQLStringLiteral } from '../dist/tools/CloudCompute.js';
 
 test('remote SSH target validation rejects shell metacharacters in host and username', () => {
@@ -148,6 +149,21 @@ test('daemon abort controller cancels work on client disconnect and cleans up li
   cleanup();
   assert.equal(request.listenerCount('aborted'), 0);
   assert.equal(response.listenerCount('close'), 0);
+});
+
+test('agent retry delay is interrupted promptly when its signal aborts', async () => {
+  const controller = new AbortController();
+  const waiting = waitForRetryDelay(60_000, controller.signal);
+  controller.abort();
+  assert.equal(await waiting, false);
+});
+
+test('agent retry delay completes normally and handles an already-aborted signal', async () => {
+  assert.equal(await waitForRetryDelay(1), true);
+
+  const controller = new AbortController();
+  controller.abort();
+  assert.equal(await waitForRetryDelay(60_000, controller.signal), false);
 });
 
 test('daemon abort controller does not cancel completed responses', () => {
