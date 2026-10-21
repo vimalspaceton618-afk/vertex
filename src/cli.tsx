@@ -41,7 +41,9 @@ program.command('doctor')
   .action((commandOptions: { json?: boolean }) => {
     commandHandled = true;
     const report = collectDiagnostics();
-    process.stdout.write(commandOptions.json
+    // --json is also a root option for headless mode, so Commander may store it on the parent.
+    const jsonOutput = Boolean(commandOptions.json || program.opts().json);
+    process.stdout.write(jsonOutput
       ? `${JSON.stringify(report, null, 2)}\n`
       : `${formatDiagnosticReport(report)}\n`);
     if (!report.ok) process.exitCode = 1;
