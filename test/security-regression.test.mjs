@@ -10,7 +10,7 @@ import { validateRemoteTarget, AutoExecutorTool } from '../dist/tools/AutoExecut
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
 import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
 import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer, createDaemonAbortController } from '../dist/core/daemon.js';
-import { waitForRetryDelay } from '../dist/core/agent/BaseAgent.js';
+import { awaitWithAbort, waitForRetryDelay } from '../dist/core/agent/BaseAgent.js';
 import { toGraphQLStringLiteral } from '../dist/tools/CloudCompute.js';
 
 test('remote SSH target validation rejects shell metacharacters in host and username', () => {
@@ -185,6 +185,18 @@ test('daemon abort controller cancels work on client disconnect and cleans up li
   cleanup();
   assert.equal(request.listenerCount('aborted'), 0);
   assert.equal(response.listenerCount('close'), 0);
+});
+
+test('agent orchestration stops waiting on an operation after abort', async () => {
+  const controller = new AbortController();
+  let timer;
+  const operation = new Promise((resolve) => {
+    timer = setTimeout(() => resolve('late result'), 60_000);
+  });
+  const waiting = awaitWithAbort(operation, controller.signal);
+  controller.abort();
+  await assert.rejects(waiting, /Operation aborted/);
+  clearTimeout(timer);
 });
 
 test('agent retry delay is interrupted promptly when its signal aborts', async () => {
