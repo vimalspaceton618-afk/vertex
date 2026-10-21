@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 
 import { validateRemoteTarget } from '../dist/tools/AutoExecutor.js';
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
 import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
-import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS } from '../dist/core/daemon.js';
+import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer } from '../dist/core/daemon.js';
 import { toGraphQLStringLiteral } from '../dist/tools/CloudCompute.js';
 
 test('remote SSH target validation rejects shell metacharacters in host and username', () => {
@@ -132,5 +133,62 @@ test('GraphQL string literal encoding preserves content without raw line breaks'
   const encoded = toGraphQLStringLiteral(input);
   assert.equal(JSON.parse(encoded), input);
   assert.equal(encoded.includes('\n'), false);
+});
+
+test('daemon HTTP boundary rejects malformed, oversized, wrong-type, and cross-origin requests', async () => {
+  if (daemonServer.listening) throw new Error('Daemon server unexpectedly already listening');
+
+  await new Promise((resolve, reject) => {
+    daemonServer.once('error', reject);
+    daemonServer.listen(0, '127.0.0.1', resolve);
+  });
+
+  const address = daemonServer.address();
+  assert.ok(address && typeof address === 'object');
+  const port = address.port;
+
+  const request = (options, body = '') => new Promise((resolve, reject) => {
+    const req = http.request({
+      host: '127.0.0.1',
+      port,
+      path: '/run',
+      method: 'POST',
+      ...options
+    }, (res) => {
+      let responseBody = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => { responseBody += chunk; });
+      res.on('end', () => resolve({ status: res.statusCode, body: responseBody }));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+
+  try {
+    const wrongType = await request({ headers: { 'Content-Type': 'text/plain' } }, '{}');
+    assert.equal(wrongType.status, 415);
+
+    const malformed = await request({ headers: { 'Content-Type': 'application/json' } }, '{');
+    assert.equal(malformed.status, 400);
+
+    const invalidPrompt = await request({ headers: { 'Content-Type': 'application/json' } }, JSON.stringify({ prompt: '   ' }));
+    assert.equal(invalidPrompt.status, 400);
+
+    const oversized = await request(
+      { headers: { 'Content-Type': 'application/json' } },
+      JSON.stringify({ prompt: 'x'.repeat(70 * 1024) })
+    );
+    assert.equal(oversized.status, 413);
+
+    const crossOrigin = await request({
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'https://attacker.example'
+      }
+    }, JSON.stringify({ prompt: 'must not run' }));
+    assert.equal(crossOrigin.status, 403);
+  } finally {
+    await new Promise((resolve, reject) => daemonServer.close((error) => error ? reject(error) : resolve()));
+  }
 });
 
