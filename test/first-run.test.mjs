@@ -6,6 +6,7 @@ import path from 'node:path';
 
 import { initializeWorkspaceConfig } from '../dist/core/setup.js';
 import { collectDiagnostics, formatDiagnosticReport } from '../dist/core/diagnostics.js';
+import { ConfigManager } from '../dist/core/config.js';
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-first-run-'));
@@ -135,5 +136,30 @@ test('doctor reads regular workspace .env files but refuses to follow symlinks',
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
     fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('global config initialization refuses to follow a symlink', (t) => {
+  const root = makeTempDir();
+  const configDir = path.join(root, '.vertexcli');
+  const target = path.join(root, 'outside-config.json');
+  const link = path.join(configDir, 'config.json');
+  const previousPath = ConfigManager.globalConfigPath;
+  const original = JSON.stringify({ marker: 'must-remain-unchanged' });
+  try {
+    fs.mkdirSync(configDir, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(target, original, { mode: 0o600 });
+    try {
+      fs.symlinkSync(target, link);
+    } catch {
+      t.skip('Symlink creation is unavailable on this platform.');
+      return;
+    }
+    ConfigManager.globalConfigPath = link;
+    assert.throws(() => ConfigManager.init(), /symbolic link/i);
+    assert.equal(fs.readFileSync(target, 'utf8'), original, 'symlink target must remain unchanged');
+  } finally {
+    ConfigManager.globalConfigPath = previousPath;
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
