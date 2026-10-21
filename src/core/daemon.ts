@@ -176,6 +176,13 @@ export const daemonServer = http.createServer(async (req, res) => {
                 } finally {
                     cleanup();
                     activeDaemonControllers.delete(controller);
+                    // A graceful close may have started while this response was active.
+                    // Close the keep-alive socket after the response has fully flushed.
+                    if (!daemonServer.listening) {
+                        const closeIdleAfterResponse = () => daemonServer.closeIdleConnections();
+                        if (res.writableFinished) closeIdleAfterResponse();
+                        else res.once('finish', closeIdleAfterResponse);
+                    }
                 }
             } catch (e: any) {
                 if (res.headersSent) {
