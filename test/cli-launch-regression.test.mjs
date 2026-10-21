@@ -85,10 +85,12 @@ test('no-argument launch renders the TUI, runs /help, and exits cleanly', async 
   const home = makeTempDir();
   const env = cleanEnv(home);
   env.TERM = 'xterm-256color';
+  env.COLUMNS = '100';
+  env.LINES = '30';
 
   // script supplies a real pseudo-terminal, so Ink sees a genuine TTY rather
   // than the stream-based MOCK_TTY shim.
-  const command = shellQuote(process.execPath) + ' ' + shellQuote(cliPath);
+  const command = 'stty cols 100 rows 30; exec ' + shellQuote(process.execPath) + ' ' + shellQuote(cliPath);
   const child = spawn('script', ['-qefc', command, '/dev/null'], {
     cwd,
     env,
