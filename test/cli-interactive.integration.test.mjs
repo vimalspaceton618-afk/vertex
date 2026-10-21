@@ -13,8 +13,8 @@ function makeTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-function waitForOutput(child, getOutput, needle, timeoutMs = 10_000) {
-  if (getOutput().includes(needle)) return Promise.resolve();
+function waitForOutput(child, getOutput, needle, timeoutMs = 10_000, startIndex = 0) {
+  if (getOutput().slice(startIndex).includes(needle)) return Promise.resolve();
 
   return new Promise((resolve, reject) => {
     const cleanup = () => {
@@ -28,7 +28,7 @@ function waitForOutput(child, getOutput, needle, timeoutMs = 10_000) {
       reject(new Error(message));
     };
     const onData = () => {
-      if (getOutput().includes(needle)) {
+      if (getOutput().slice(startIndex).includes(needle)) {
         cleanup();
         resolve();
       }
@@ -137,8 +137,9 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
     ['/skill invalid sample', 'Unknown skill: invalid']
   ];
   for (const [command, expected] of safeCommands) {
+    const before = stdout.length;
     child.stdin.write(command + String.fromCharCode(13));
-    await waitForOutput(child, () => stdout, expected, 8_000);
+    await waitForOutput(child, () => stdout, expected, 8_000, before);
   }
 
   const missingArguments = [
@@ -156,8 +157,9 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
     ['/sandbox', 'Usage: /sandbox <shell command>']
   ];
   for (const [command, expected] of missingArguments) {
+    const before = stdout.length;
     child.stdin.write(command + String.fromCharCode(13));
-    await waitForOutput(child, () => stdout, expected, 8_000);
+    await waitForOutput(child, () => stdout, expected, 8_000, before);
   }
 
   assert.equal(fs.existsSync(path.join(cwd, '.env')), true, '/init should create only the temporary workspace template');
