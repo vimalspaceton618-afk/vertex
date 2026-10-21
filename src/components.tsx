@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import Spinner from 'ink-spinner';
 
 const RobotLogo = () => (
@@ -13,16 +13,21 @@ const RobotLogo = () => (
 
 export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> = ({
   version = 'v0.1.6',
-  activeAgent = 'Arrektys Code'
+  activeAgent = 'VERTEX'
 }) => {
-  const repeatCount = Math.max(0, 91 - activeAgent.length - version.length);
-  const activeModel = process.env.AI_MODEL || 'gpt-4o';
+  const { stdout } = useStdout();
+  const terminalWidth = Math.max(40, Math.min(120, stdout.columns || 80));
+  const innerWidth = terminalWidth - 2;
+  const panelWidth = Math.max(18, Math.floor(innerWidth / 2) - 1);
+  const repeatCount = Math.max(0, innerWidth - activeAgent.length - version.length - 5);
+  const activeModel = process.env.AI_MODEL || 'provider not configured';
   const currentCwd = process.cwd();
+  const cwdDisplay = currentCwd.length > panelWidth - 4 ? `…${currentCwd.slice(-(panelWidth - 5))}` : currentCwd;
 
   return (
-    <Box flexDirection="column" width={97}>
+    <Box flexDirection="column" width={terminalWidth}>
       {/* Top Border with Title */}
-      <Box flexDirection="row">
+      <Box flexDirection="row" flexWrap="nowrap">
         <Text color="cyan">╭─ </Text>
         <Text color="cyan" bold>{activeAgent} {version} </Text>
         <Text color="cyan">{"─".repeat(repeatCount)}╮</Text>
@@ -36,11 +41,11 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
         </Box>
 
         {/* Left Pane (Welcome & Details) */}
-        <Box width={47} flexDirection="column" alignItems="center" paddingX={2}>
+        <Box width={panelWidth} flexDirection="column" alignItems="center" paddingX={1}>
           <Text bold>Welcome back!</Text>
           <RobotLogo />
           <Text color="gray">{activeModel}</Text>
-          <Text color="gray">{currentCwd}</Text>
+          <Text color="gray">{cwdDisplay}</Text>
         </Box>
 
         {/* Center Divider */}
@@ -49,17 +54,17 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
         </Box>
 
         {/* Right Pane (Tips & Activity) */}
-        <Box width={47} flexDirection="column" paddingX={2}>
+        <Box width={panelWidth} flexDirection="column" paddingX={1}>
           <Text color="cyan" bold>Tips for getting started</Text>
-          <Text>Run /help to see commands for Arrekt...</Text>
-          <Text>Note: Launched in home directory.</Text>
+          <Text>Use / or type /help to discover commands.</Text>
+          <Text>Workspace: current directory</Text>
           
           <Box flexDirection="row" marginTop={1}>
-            <Text color="cyan">{"─".repeat(43)}</Text>
+            <Text color="cyan">{"─".repeat(Math.max(8, panelWidth - 4))}</Text>
           </Box>
           
           <Text color="cyan" bold>Recent activity</Text>
-          <Text color="gray">No recent activity</Text>
+          <Text color="gray">Activity appears as tasks run.</Text>
         </Box>
 
         {/* Right Border */}
@@ -70,7 +75,7 @@ export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> 
 
       {/* Bottom Border */}
       <Box flexDirection="row">
-        <Text color="cyan">╰{"─".repeat(47)}┴{"─".repeat(47)}╯</Text>
+        <Text color="cyan">╰{"─".repeat(panelWidth)}┴{"─".repeat(panelWidth)}╯</Text>
       </Box>
     </Box>
   );
