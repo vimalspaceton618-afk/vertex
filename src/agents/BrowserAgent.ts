@@ -236,7 +236,7 @@ export class BrowserAgent extends BaseAgent {
         const browser = await this.ensureBrowser();
         if (!BrowserAgent.page || BrowserAgent.page.isClosed()) {
             BrowserAgent.page = await browser.newPage();
-            await BrowserAgent.page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/124 Safari/537.36');
+            await BrowserAgent.page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36');
             await BrowserAgent.page.setViewport({ width: 1365, height: 900 });
         }
         return BrowserAgent.page;
