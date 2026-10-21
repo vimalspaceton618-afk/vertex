@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import * as dotenv from 'dotenv';
 
 export type DiagnosticStatus = 'pass' | 'warn' | 'fail';
 export type DiagnosticItem = { name: string; status: DiagnosticStatus; message: string };
@@ -115,11 +116,39 @@ export function collectDiagnostics(options: DiagnosticOptions = {}): DiagnosticR
     }
   }
 
+  let workspaceEnv: Record<string, string> = {};
+  const workspaceEnvPath = path.join(cwd, '.env');
+  try {
+    const envStat = fs.lstatSync(workspaceEnvPath);
+    if (envStat.isSymbolicLink()) {
+      add('Workspace .env', 'warn', 'The workspace .env is a symbolic link and was not read; inspect it before relying on provider settings.');
+    } else if (!envStat.isFile()) {
+      add('Workspace .env', 'warn', 'The workspace .env path is not a regular file and was not read.');
+    } else {
+      fs.accessSync(workspaceEnvPath, fs.constants.R_OK);
+      workspaceEnv = dotenv.parse(fs.readFileSync(workspaceEnvPath));
+      if (platform !== 'win32' && (envStat.mode & 0o077) !== 0) {
+        add('Workspace .env permissions', 'warn', 'The workspace .env is accessible to group/other users; restrict it to the current user (chmod 600).');
+      } else if (platform !== 'win32') {
+        add('Workspace .env permissions', 'pass', 'The workspace .env has user-only filesystem permissions.');
+      } else {
+        add('Workspace .env permissions', 'warn', 'Verify Windows ACLs on the workspace .env file.');
+      }
+    }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      add('Workspace .env', 'warn', 'The workspace .env could not be inspected; check its path and permissions.');
+    }
+  }
+
   const configured = (key: string): string => {
     const fromConfig = config?.[key];
     if (typeof fromConfig === 'string' && fromConfig.trim()) return fromConfig.trim();
     const fromEnv = env[key];
-    return typeof fromEnv === 'string' ? fromEnv.trim() : '';
+    if (typeof fromEnv === 'string' && fromEnv.trim()) return fromEnv.trim();
+    const fromWorkspaceEnv = workspaceEnv[key];
+    return typeof fromWorkspaceEnv === 'string' ? fromWorkspaceEnv.trim() : '';
   };
   const mode = (configured('BRAIN_MODE') || 'cloud').toLowerCase();
   const localOnly = ['local', 'local_only', 'local-only', 'offline'].includes(mode);
