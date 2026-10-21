@@ -93,3 +93,47 @@ test('doctor detects old Node.js, unsafe config permissions, and invalid JSON', 
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('doctor reads regular workspace .env files but refuses to follow symlinks', () => {
+  const cwd = makeTempDir();
+  const outside = makeTempDir();
+  const secret = 'workspace-secret-never-display';
+  try {
+    const envFile = path.join(cwd, '.env');
+    fs.writeFileSync(envFile, `OPENAI_API_KEY=${secret}\\nBRAIN_MODE=cloud\\n`, { mode: 0o600 });
+    const regularReport = collectDiagnostics({
+      cwd,
+      configPath: path.join(cwd, 'missing-config.json'),
+      env: {},
+      nodeVersion: '22.1.0',
+      platform: process.platform,
+      checkGit: false,
+      checkDocker: false
+    });
+    assert.ok(regularReport.items.some((item) => item.name === 'Model provider' && item.status === 'pass'));
+    assert.doesNotMatch(JSON.stringify(regularReport), new RegExp(secret));
+
+    fs.rmSync(envFile);
+    fs.writeFileSync(path.join(outside, 'foreign.env'), `OPENAI_API_KEY=${secret}\\n`, { mode: 0o600 });
+    try {
+      fs.symlinkSync(path.join(outside, 'foreign.env'), envFile);
+    } catch {
+      return; // Symlink creation may be unavailable on some Windows runners.
+    }
+    const linkedReport = collectDiagnostics({
+      cwd,
+      configPath: path.join(cwd, 'missing-config.json'),
+      env: {},
+      nodeVersion: '22.1.0',
+      platform: process.platform,
+      checkGit: false,
+      checkDocker: false
+    });
+    assert.ok(linkedReport.items.some((item) => item.name === 'Workspace .env' && item.status === 'warn'));
+    assert.ok(linkedReport.items.some((item) => item.name === 'Model provider' && item.status === 'warn'));
+    assert.doesNotMatch(JSON.stringify(linkedReport), new RegExp(secret));
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
