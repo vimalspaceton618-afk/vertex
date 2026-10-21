@@ -23,7 +23,10 @@ test('init creates an empty-secret template with restrictive permissions', () =>
     const contents = fs.readFileSync(envFile, 'utf8');
     assert.match(contents, /OPENAI_API_KEY=\n/);
     assert.match(contents, /never commit it/i);
-    assert.match(contents, /LOCAL_BASE_URL=http:\/\/127\.0\.0\.1:11434\/v1/);\n    assert.match(contents, /LOCAL_MODEL=/);\n    assert.match(contents, /WORKSPACE_ROOT=/);\n    assert.doesNotMatch(contents, /^VERTEX_WORKSPACE_ROOT=/m);
+    assert.match(contents, /LOCAL_BASE_URL=http:\/\/127\.0\.0\.1:11434\/v1/);
+    assert.match(contents, /LOCAL_MODEL=/);
+    assert.match(contents, /WORKSPACE_ROOT=/);
+    assert.doesNotMatch(contents, /^VERTEX_WORKSPACE_ROOT=/m);
     assert.doesNotMatch(contents, /OPENAI_API_KEY=(?!\s*$)[^\n]+/);
     if (process.platform !== 'win32') {
       assert.equal(fs.statSync(envFile).mode & 0o777, 0o600);
