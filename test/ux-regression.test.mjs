@@ -30,8 +30,9 @@ test('welcome command tips match the discoverable commands', () => {
 
 
 test('safe init and doctor are registered as CLI subcommands before application startup', () => {
-  assert.match(cli, /program\\.command\\('doctor'\\)/, 'doctor CLI subcommand should exist');
-  assert.match(cli, /program\\.command\\('init'\\)/, 'init CLI subcommand should exist');
+  assert.match(cli, /program\.command\('doctor'\)/, 'doctor CLI subcommand should exist');
+  assert.match(cli, /program\.command\('init'\)/, 'init CLI subcommand should exist');
   assert.ok(cli.indexOf('program.parse(process.argv)') < cli.indexOf('if (!commandHandled)'), 'subcommands should be parsed before normal application startup');
   assert.match(cli, /if \(!commandHandled\) \{\s*ConfigManager\.init\(\);\s*ensureScopeFile\(\);/, 'diagnostic/setup subcommands must avoid automatic config/scope writes');
+  assert.doesNotMatch(fs.readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8'), /^ensureScopeFile\(\);/m, 'importing the UI must not write workspace state before a subcommand is handled');
 });
