@@ -53,12 +53,14 @@ function stripHtml(value: string): string {
     return decodeHtmlEntities(value.replace(/<[^>]+>/g, ' '));
 }
 
-async function searchDuckDuckGoLite(query: string, maxResults: number): Promise<string> {
+async function searchDuckDuckGoLite(query: string, maxResults: number, signal?: AbortSignal): Promise<string> {
+    if (signal?.aborted) throw new Error('Browser search cancelled.');
     const url = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
     const resp = await fetch(url, {
         headers: {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36'
-        }
+        },
+        signal
     });
     if (!resp.ok) return `[DUCKDUCKGO SEARCH] Lite fallback failed (${resp.status}).`;
     const html = await resp.text();
@@ -111,8 +113,8 @@ class BrowserNavigateTool extends Tool {
         additionalProperties: false
     };
     constructor(private readonly owner: BrowserAgent) { super(); }
-    async execute(args: { url: string }): Promise<string> {
-        return this.owner.navigateUrl(args.url);
+    async execute(args: { url: string }, _requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
+        return this.owner.navigateUrl(args.url, signal);
     }
 }
 
@@ -129,8 +131,8 @@ class BrowserScreenshotTool extends Tool {
         additionalProperties: false
     };
     constructor(private readonly owner: BrowserAgent) { super(); }
-    async execute(args: { filePath: string; url?: string }): Promise<string> {
-        return this.owner.screenshotUrl(args.url, args.filePath);
+    async execute(args: { filePath: string; url?: string }, _requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
+        return this.owner.screenshotUrl(args.url, args.filePath, signal);
     }
 }
 
@@ -146,8 +148,8 @@ class BrowserGetContentTool extends Tool {
         additionalProperties: false
     };
     constructor(private readonly owner: BrowserAgent) { super(); }
-    async execute(args: { url?: string; maxChars?: number }): Promise<string> {
-        return this.owner.getPageContent(args.url, args.maxChars);
+    async execute(args: { url?: string; maxChars?: number }, _requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
+        return this.owner.getPageContent(args.url, args.maxChars, signal);
     }
 }
 
@@ -164,8 +166,8 @@ class BrowserSearchTool extends Tool {
         additionalProperties: false
     };
     constructor(private readonly owner: BrowserAgent) { super(); }
-    async execute(args: { query: string; maxResults?: number }): Promise<string> {
-        return this.owner.searchDuckDuckGo(args.query, args.maxResults);
+    async execute(args: { query: string; maxResults?: number }, _requestConfirmation: (msg: string) => Promise<boolean>, signal?: AbortSignal): Promise<string> {
+        return this.owner.searchDuckDuckGo(args.query, args.maxResults, signal);
     }
 }
 
@@ -229,34 +231,69 @@ export class BrowserAgent extends BaseAgent {
         return BrowserAgent.page;
     }
 
-    public async navigateUrl(url: string): Promise<string> {
-        const page = await this.ensurePage();
-        const normalized = normalizeHttpUrl(url);
-        await page.goto(normalized, { waitUntil: 'domcontentloaded' });
-        const title = await page.title();
-        return `Navigated to ${normalized}\nTitle: ${title || '(untitled)'}`;
-    }
+    /**
+     * Give each browser operation its own page so aborting one task cannot cancel
+     * another agent's navigation. The shared browser process remains reusable.
+     */
+    private async withTaskPage<T>(signal: AbortSignal | undefined, operation: (page: Page) => Promise<T>): Promise<T> {
+        if (signal?.aborted) throw new Error('Browser task cancelled.');
+        await this.ensurePage();
+        const browser = BrowserAgent.browser;
+        if (!browser || !browser.connected) throw new Error('Browser is not connected.');
 
-    public async getPageContent(url?: string, maxChars = 6000): Promise<string> {
-        const page = await this.ensurePage();
-        const normalized = url ? normalizeHttpUrl(url) : '';
-        if (normalized) {
-            await page.goto(normalized, { waitUntil: 'domcontentloaded' });
+        const page = await browser.newPage();
+        let cancelled = false;
+        const closeOnAbort = () => {
+            cancelled = true;
+            void page.close().catch(() => undefined);
+        };
+        signal?.addEventListener('abort', closeOnAbort, { once: true });
+        try {
+            if (signal?.aborted) closeOnAbort();
+            if (cancelled) throw new Error('Browser task cancelled.');
+            await page.setUserAgent('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/124 Safari/537.36');
+            await page.setViewport({ width: 1365, height: 900 });
+            const result = await operation(page);
+            if (cancelled || signal?.aborted) throw new Error('Browser task cancelled.');
+            return result;
+        } finally {
+            signal?.removeEventListener('abort', closeOnAbort);
+            if (!page.isClosed()) {
+                await page.close().catch(() => undefined);
+            }
         }
-        const title = await page.title();
-        const text = await page.evaluate(() => document.body?.innerText || '');
-        const boundedMax = Math.max(500, Math.min(Number(maxChars || 6000), 50000));
-        const body = text.length > boundedMax ? `${text.slice(0, boundedMax)}\n...[truncated]` : text;
-        return [
-            normalized ? `URL: ${normalized}` : '',
-            title ? `Title: ${title}` : '',
-            '',
-            body || '[BROWSER CONTENT]: Page returned no visible text.'
-        ].filter(Boolean).join('\n');
     }
 
-    public async summarizeUrl(url: string, maxChars = 12000): Promise<string> {
-        const content = await this.getPageContent(url, maxChars);
+    public async navigateUrl(url: string, signal?: AbortSignal): Promise<string> {
+        return this.withTaskPage(signal, async (page) => {
+            const normalized = normalizeHttpUrl(url);
+            await page.goto(normalized, { waitUntil: 'domcontentloaded' });
+            const title = await page.title();
+            return `Navigated to ${normalized}\nTitle: ${title || '(untitled)'}`;
+        });
+    }
+
+    public async getPageContent(url?: string, maxChars = 6000, signal?: AbortSignal): Promise<string> {
+        return this.withTaskPage(signal, async (page) => {
+            const normalized = url ? normalizeHttpUrl(url) : '';
+            if (normalized) {
+                await page.goto(normalized, { waitUntil: 'domcontentloaded' });
+            }
+            const title = await page.title();
+            const text = await page.evaluate(() => document.body?.innerText || '');
+            const boundedMax = Math.max(500, Math.min(Number(maxChars || 6000), 50000));
+            const body = text.length > boundedMax ? `${text.slice(0, boundedMax)}\n...[truncated]` : text;
+            return [
+                normalized ? `URL: ${normalized}` : '',
+                title ? `Title: ${title}` : '',
+                '',
+                body || '[BROWSER CONTENT]: Page returned no visible text.'
+            ].filter(Boolean).join('\n');
+        });
+    }
+
+    public async summarizeUrl(url: string, maxChars = 12000, signal?: AbortSignal): Promise<string> {
+        const content = await this.getPageContent(url, maxChars, signal);
         const lines = content
             .split('\n')
             .map((line) => line.trim())
@@ -272,24 +309,25 @@ export class BrowserAgent extends BaseAgent {
         ].join('\n');
     }
 
-    public async screenshotUrl(url: string | undefined, filePath: string): Promise<string> {
-        const page = await this.ensurePage();
-        const normalized = url ? normalizeHttpUrl(url) : '';
-        if (normalized) {
-            await page.goto(normalized, { waitUntil: 'networkidle2' });
-        }
-        const target = resolveInsideWorkspace(filePath);
-        await fs.promises.mkdir(path.dirname(target), { recursive: true });
-        await page.screenshot({ path: target, fullPage: true });
-        return `Screenshot saved to ${target}`;
+    public async screenshotUrl(url: string | undefined, filePath: string, signal?: AbortSignal): Promise<string> {
+        return this.withTaskPage(signal, async (page) => {
+            const normalized = url ? normalizeHttpUrl(url) : '';
+            if (normalized) {
+                await page.goto(normalized, { waitUntil: 'networkidle2' });
+            }
+            const target = resolveInsideWorkspace(filePath);
+            await fs.promises.mkdir(path.dirname(target), { recursive: true });
+            await page.screenshot({ path: target, fullPage: true });
+            return `Screenshot saved to ${target}`;
+        });
     }
 
     public async takeScreenshot(url: string, filePath: string) {
         await this.screenshotUrl(url, filePath);
     }
 
-    public async searchDuckDuckGo(query: string, maxResults = 8): Promise<string> {
-        const page = await this.ensurePage();
+    public async searchDuckDuckGo(query: string, maxResults = 8, signal?: AbortSignal): Promise<string> {
+        return this.withTaskPage(signal, async (page) => {
         const boundedMax = Math.max(1, Math.min(Number(maxResults || 8), 20));
         const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded' });
@@ -323,8 +361,7 @@ export class BrowserAgent extends BaseAgent {
         if (!results.length) {
             const text = await page.evaluate(() => document.body?.innerText || '');
             if (text.toLowerCase().includes('please complete the following challenge') || text.toLowerCase().includes('bots use duckduckgo')) {
-                await this.closeBrowser();
-                return searchDuckDuckGoLite(query, boundedMax);
+                return searchDuckDuckGoLite(query, boundedMax, signal);
             }
             return `[DUCKDUCKGO SEARCH] No structured results found for "${query}".\n${text.slice(0, 2000)}`;
         }
@@ -339,6 +376,7 @@ export class BrowserAgent extends BaseAgent {
                 result.snippet ? `   Snippet: ${result.snippet}` : ''
             ].filter(Boolean).join('\n'))
         ].join('\n');
+        });
     }
 
     public async closeBrowser() {
