@@ -12,6 +12,7 @@ import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
 import { VertexHeader, AgentStatusMonitor, PermissionPrompt, TaskResultSummary, type TaskLifecycleStatus } from './components.js';
 import { listWorkspaceSkills, readWorkspaceSkill } from './core/skills/SkillLoader.js';
+import { forceSafeMode, getAutonomyMode } from './core/policy/ModeControl.js';
 
 type HistoryMessage = { id: string; role: 'user' | 'assistant'; content: string };
 type ConfirmPrompt = { message: string; resolve: (value: boolean) => void };
@@ -69,6 +70,7 @@ const COMMANDS = [
   { name: '/learn', desc: 'Extract and save learned rules' },
   { name: '/skill', desc: 'Query science databases: /skill <...>' },
   { name: '/skills', desc: 'List or inspect local Markdown skills safely' },
+  { name: '/mode', desc: 'Show autonomy mode or downgrade to /mode safe' },
   { name: '/gpu', desc: 'Manage GPU jobs: /gpu <action>' }
 ];
 
@@ -681,6 +683,18 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
     if (lowerQuery === '/learn') {
       runDelegatedStream(query, 'Analyze the conversation history. Extract any lessons, rules, guidelines, or reusable patterns we established, and save them in markdown format to ~/.vertex/learned_rules.md.');
+      return;
+    }
+
+    if (lowerQuery === '/mode' || lowerQuery === '/mode safe') {
+      setPromptValue('');
+      if (lowerQuery === '/mode safe') {
+        const mode = forceSafeMode();
+        appendTurn(query, `Autonomy mode set to ${mode} for this process. This is a safety downgrade; it does not enable unrestricted execution.`);
+      } else {
+        const mode = getAutonomyMode();
+        appendTurn(query, `Current autonomy mode: ${mode}. Use /mode safe to downgrade to semi_auto. Enabling full_auto_lab requires explicit configuration outside the interactive UI.`);
+      }
       return;
     }
 
