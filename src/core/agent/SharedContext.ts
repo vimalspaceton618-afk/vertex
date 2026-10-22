@@ -48,20 +48,22 @@ export class SharedContext {
     static init() {
         const contextFile = this.getContextFile();
         const dir = path.dirname(contextFile);
-        if (fs.existsSync(dir)) {
-            try {
-                const stat = fs.statSync(dir);
-                if (!stat.isDirectory()) {
-                    fs.unlinkSync(dir);
-                }
-            } catch (e) {
-                // Ignore stat/unlink errors
-            }
+        // Never unlink a path that may belong to the user. Reject unsafe state paths.
+        fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        const dirStat = fs.lstatSync(dir);
+        if (!dirStat.isDirectory() || dirStat.isSymbolicLink()) {
+            throw new Error('VERTEX state directory must be a real directory.');
         }
-        if (!fs.existsSync(contextFile)) {
-            fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
-            if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
-            fs.writeFileSync(contextFile, JSON.stringify({}, null, 2), { mode: 0o600 });
+        if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
+        try {
+            const fileStat = fs.lstatSync(contextFile);
+            if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
+                throw new Error('VERTEX state file must be a regular file, not a symlink.');
+            }
+            if (process.platform !== 'win32') fs.chmodSync(contextFile, 0o600);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+            fs.writeFileSync(contextFile, JSON.stringify({}, null, 2), { mode: 0o600, flag: 'wx' });
             if (process.platform !== 'win32') fs.chmodSync(contextFile, 0o600);
         }
     }
@@ -79,17 +81,19 @@ export class SharedContext {
 
     static set(key: string, value: any) {
         const contextFile = this.getContextFile();
+        this.init();
+        const fileStat = fs.lstatSync(contextFile);
+        if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
+            throw new Error('VERTEX state file must be a regular file, not a symlink.');
+        }
         let data: Record<string, any> = {};
-        if (fs.existsSync(contextFile)) {
-            try {
-                data = JSON.parse(fs.readFileSync(contextFile, 'utf-8'));
-            } catch (e) {
-                // Ignore parse errors, rewrite
-            }
+        try {
+            data = JSON.parse(fs.readFileSync(contextFile, 'utf-8'));
+            if (!data || typeof data !== 'object' || Array.isArray(data)) data = {};
+        } catch {
+            // Recover from malformed state without following alternate paths.
         }
         data[key] = value;
-        fs.mkdirSync(path.dirname(contextFile), { recursive: true, mode: 0o700 });
-        if (process.platform !== 'win32') fs.chmodSync(path.dirname(contextFile), 0o700);
         fs.writeFileSync(contextFile, JSON.stringify(data, null, 2), { mode: 0o600 });
         // `mode` only affects creation; also tighten permissions on an existing state file.
         if (process.platform !== 'win32') fs.chmodSync(contextFile, 0o600);
