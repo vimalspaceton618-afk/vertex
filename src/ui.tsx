@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Box, Text, useApp, useInput, useStdout, Static } from 'ink';
 import path from 'path';
 import os from 'os';
-import { AgentManager } from './core/agent/AgentManager.js';
+import type { AgentManager } from './core/agent/AgentManager.js';
 import { NcbiFetchTool, UniProtFetchTool, PubChemSearchTool, PubMedSearchTool, ArxivSearchTool } from './tools/ScienceSkills.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { collectDiagnostics, formatDiagnosticReport } from './core/diagnostics.js';
@@ -200,7 +200,14 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
 
-  const orchestrator = useRef(new AgentManager()).current;
+  const orchestratorRef = useRef<AgentManager | null>(null);
+  const getOrchestrator = async (): Promise<AgentManager> => {
+    if (orchestratorRef.current) return orchestratorRef.current;
+    const { AgentManager } = await import('./core/agent/AgentManager.js');
+    const instance = new AgentManager();
+    orchestratorRef.current = instance;
+    return instance;
+  };
   const autoApproveToolsRef = useRef(false);
   const currentAbortController = useRef<AbortController | null>(null);
 
@@ -351,6 +358,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
           updateLastAssistantThrottled(fullText);
         }
       } else {
+        const orchestrator = await getOrchestrator();
         const stream = orchestrator.delegateTask(routedPrompt, makeConfirm(), controller.signal);
         for await (const chunk of stream) {
           if (controller.signal.aborted) break;
@@ -402,7 +410,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         const result = await task();
         if (!controller.signal.aborted) {
           updateLastAssistant(result);
-          orchestrator.recordTurn(query, result);
+          orchestratorRef.current?.recordTurn(query, result);
           setTaskStage('completed');
         } else {
           setTaskStage('cancelled');
@@ -442,7 +450,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       setPromptValue('');
       if (primaryCmd === 'clear') {
         setHistory([]);
-        orchestrator.clearHistory();
+        orchestratorRef.current?.clearHistory();
         process.stdout.write('\x1Bc');
         return;
       }
@@ -524,7 +532,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     if (lowerQuery === '/clear' || lowerQuery === 'clear') {
       setPromptValue('');
       setHistory([]);
-      orchestrator.clearHistory();
+      orchestratorRef.current?.clearHistory();
       process.stdout.write('\x1Bc');
       return;
     }

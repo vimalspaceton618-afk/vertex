@@ -4,6 +4,8 @@ import fs from 'node:fs';
 const ui = fs.readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
 const cli = fs.readFileSync(new URL('../src/cli.tsx', import.meta.url), 'utf8');
 const components = fs.readFileSync(new URL('../src/components.tsx', import.meta.url), 'utf8');
+const daemon = fs.readFileSync(new URL('../src/core/daemon.ts', import.meta.url), 'utf8');
+const agentManager = fs.readFileSync(new URL('../src/core/agent/AgentManager.ts', import.meta.url), 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const packageLock = JSON.parse(fs.readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
 
@@ -61,4 +63,19 @@ test('header, welcome panel, trust gate, and prompt use the shared responsive wi
   assert.match(ui, /<TrustGate trustCursor=\{trustCursor\} width=\{layoutWidth\} \/>/);
   assert.match(ui, /queuedQueries=\{queuedQueries\}\s*width=\{layoutWidth\}/);
   assert.doesNotMatch(ui, /width=\{97\}|repeat\(97\)|width="100%"/, 'primary layout should not use mismatched hard-coded widths');
+});
+
+test('interactive TUI and daemon defer AgentManager loading until an agent task is requested', () => {
+  assert.match(ui, /import type \{ AgentManager \} from '\.\/core\/agent\/AgentManager\.js';/);
+  assert.match(ui, /const \{ AgentManager \} = await import\('\.\/core\/agent\/AgentManager\.js'\)/);
+  assert.doesNotMatch(ui, /^import\s+\{\s*AgentManager\s*\}\s+from\s+['"]\.\/core\/agent\/AgentManager\.js['"]/m,
+    'the TUI must not eagerly import offensive-agent dependencies on startup');
+  assert.match(daemon, /import type \{ AgentManager \} from '\.\/agent\/AgentManager\.js';/);
+  assert.match(daemon, /orchestratorPromise = import\('\.\/agent\/AgentManager\.js'\)/);
+  assert.match(daemon, /const manager = await getOrchestrator\(\)/);
+  assert.doesNotMatch(agentManager, /^import\s+\*\s+as\s+subagents\s+from\s+['"]\.\.\/\.\.\/agents\/index\.js['"]/m,
+    'AgentManager must not eagerly import every specialist');
+  assert.match(agentManager, /const SUBAGENT_LOADERS: Record<string, \(\) => Promise<Record<string, unknown>>>/);
+  assert.match(agentManager, /const AgentClass = await loadSubagent\(agentName\)/);
+  assert.match(agentManager, /const QualityAgent = await loadSubagent\('QualityAgent'\)/);
 });

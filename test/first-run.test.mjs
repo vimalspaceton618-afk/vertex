@@ -32,7 +32,7 @@ test('init creates an empty-secret template with restrictive permissions', () =>
       assert.equal(fs.statSync(envFile).mode & 0o777, 0o600);
     }
   } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -45,7 +45,7 @@ test('init never overwrites existing credentials or follows an existing .env lin
     assert.equal(first.created, false);
     assert.equal(fs.readFileSync(envFile, 'utf8'), 'OPENAI_API_KEY=keep-this-private\n');
   } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -68,8 +68,8 @@ test('init refuses to follow a pre-existing .env symlink', (t) => {
     assert.equal(fs.readFileSync(target, 'utf8'), original);
     assert.equal(fs.lstatSync(envFile).isSymbolicLink(), true);
   } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(outside, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    fs.rmSync(outside, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -95,7 +95,7 @@ test('doctor reports environment state without exposing credential values', () =
     assert.doesNotMatch(text, new RegExp(secret));
     assert.doesNotMatch(JSON.stringify(report), new RegExp(secret));
   } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -121,7 +121,7 @@ test('doctor detects old Node.js, unsafe config permissions, and invalid JSON', 
       assert.ok(report.items.some((item) => item.name === 'Config permissions' && item.status === 'warn'));
     }
   } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -147,7 +147,7 @@ test('doctor warns when workspace .env permissions expose the file to other user
     }
     assert.doesNotMatch(JSON.stringify(report), /placeholder/);
   } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -190,8 +190,8 @@ test('doctor reads regular workspace .env files but refuses to follow symlinks',
     assert.ok(linkedReport.items.some((item) => item.name === 'Model provider' && item.status === 'warn'));
     assert.doesNotMatch(JSON.stringify(linkedReport), new RegExp(secret));
   } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(outside, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    fs.rmSync(outside, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -216,7 +216,7 @@ test('doctor validates local provider URLs and never echoes embedded credentials
     assert.ok(report.items.some((item) => item.name === 'Cloud provider URL' && item.status === 'warn'));
     assert.doesNotMatch(serialized, /private-user|private-password|private\.invalid/);
   } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
+    fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -243,8 +243,8 @@ test('normal startup refuses to load secrets through a symlinked workspace .env'
     process.chdir(originalCwd);
     if (previousValue === undefined) delete process.env[key];
     else process.env[key] = previousValue;
-    fs.rmSync(root, { recursive: true, force: true });
-    fs.rmSync(outside, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    fs.rmSync(outside, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -269,7 +269,7 @@ test('global config initialization refuses to follow a symlink', (t) => {
     assert.equal(fs.readFileSync(target, 'utf8'), original, 'symlink target must remain unchanged');
   } finally {
     ConfigManager.globalConfigPath = previousPath;
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -290,8 +290,8 @@ test('global config initialization refuses to traverse a symlinked config direct
     assert.equal(fs.existsSync(path.join(outside, 'config.json')), false, 'the linked directory must not receive a config file');
   } finally {
     ConfigManager.globalConfigPath = previousPath;
-    fs.rmSync(root, { recursive: true, force: true });
-    fs.rmSync(outside, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    fs.rmSync(outside, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });
 
@@ -338,6 +338,6 @@ test('CLI doctor and init run without hidden config or scope writes', () => {
       assert.equal(fs.statSync(path.join(workspace, '.env')).mode & 0o777, 0o600);
     }
   } finally {
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });

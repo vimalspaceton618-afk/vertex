@@ -1,7 +1,8 @@
 import http from 'http';
-import { AgentManager } from './agent/AgentManager.js';
+import type { AgentManager } from './agent/AgentManager.js';
 
 let orchestrator: AgentManager | null = null;
+let orchestratorPromise: Promise<AgentManager> | null = null;
 let daemonPort = 8899;
 const activeDaemonControllers = new Set<AbortController>();
 
@@ -78,11 +79,20 @@ export function isAllowedDaemonOrigin(origin: string, expectedPort = daemonPort)
     }
 }
 
-export function getOrchestrator(): AgentManager {
-    if (!orchestrator) {
-        orchestrator = new AgentManager();
+export async function getOrchestrator(): Promise<AgentManager> {
+    if (orchestrator) return orchestrator;
+    if (!orchestratorPromise) {
+        orchestratorPromise = import('./agent/AgentManager.js').then(({ AgentManager }) => {
+            const instance = new AgentManager();
+            orchestrator = instance;
+            return instance;
+        }).catch((error) => {
+            // Let a later request retry a transient load failure.
+            orchestratorPromise = null;
+            throw error;
+        });
     }
-    return orchestrator;
+    return orchestratorPromise;
 }
 
 export const daemonServer = http.createServer(async (req, res) => {
@@ -158,7 +168,7 @@ export const daemonServer = http.createServer(async (req, res) => {
                     'Connection': 'keep-alive'
                 });
 
-                const manager = getOrchestrator();
+                const manager = await getOrchestrator();
                 // Never trust a request-body flag to grant execution approval.
                 // Unattended approval is an explicit local process configuration.
                 const autoApprove = process.env.VERTEX_DAEMON_AUTO_APPROVE === 'true';
