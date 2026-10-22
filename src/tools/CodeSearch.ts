@@ -12,9 +12,11 @@ async function walkFiles(dir: string, files: string[] = []): Promise<string[]> {
     for (const entry of entries) {
         const entryPath = path.join(dir, entry.name);
         if (entry.name === '.git' || entry.name === 'node_modules' || entry.name === 'dist') continue;
+        // Do not traverse or read symlinks: a link inside the workspace can point outside it.
+        if (entry.isSymbolicLink()) continue;
         if (entry.isDirectory()) {
             await walkFiles(entryPath, files);
-        } else {
+        } else if (entry.isFile()) {
             files.push(entryPath);
         }
     }
@@ -36,6 +38,9 @@ export class CodeSearchTool extends Tool {
     };
 
     async execute(args: { pattern: string; targetPath?: string; maxResults?: number }): Promise<string> {
+        if (typeof args.pattern !== 'string' || args.pattern.length === 0 || args.pattern.length > 4096) {
+            return '[SEARCH ERROR]: Pattern must contain 1–4096 characters.';
+        }
         const maxResults = Math.max(1, Math.min(Number(args.maxResults || 40), 200));
         const root = getWorkspaceRoot();
         const target = args.targetPath ? resolveInsideWorkspace(args.targetPath) : root;
