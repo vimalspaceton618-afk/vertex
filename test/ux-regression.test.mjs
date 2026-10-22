@@ -5,6 +5,7 @@ const ui = fs.readFileSync(new URL('../src/ui.tsx', import.meta.url), 'utf8');
 const cli = fs.readFileSync(new URL('../src/cli.tsx', import.meta.url), 'utf8');
 const components = fs.readFileSync(new URL('../src/components.tsx', import.meta.url), 'utf8');
 const daemon = fs.readFileSync(new URL('../src/core/daemon.ts', import.meta.url), 'utf8');
+const agentManager = fs.readFileSync(new URL('../src/core/agent/AgentManager.ts', import.meta.url), 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const packageLock = JSON.parse(fs.readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'));
 
@@ -72,4 +73,9 @@ test('interactive TUI and daemon defer AgentManager loading until an agent task 
   assert.match(daemon, /import type \{ AgentManager \} from '\.\/agent\/AgentManager\.js';/);
   assert.match(daemon, /orchestratorPromise = import\('\.\/agent\/AgentManager\.js'\)/);
   assert.match(daemon, /const manager = await getOrchestrator\(\)/);
+  assert.doesNotMatch(agentManager, /^import\s+\*\s+as\s+subagents\s+from\s+['"]\.\.\/\.\.\/agents\/index\.js['"]/m,
+    'AgentManager must not eagerly import every specialist');
+  assert.match(agentManager, /const SUBAGENT_LOADERS: Record<string, \(\) => Promise<Record<string, unknown>>>/);
+  assert.match(agentManager, /const AgentClass = await loadSubagent\(agentName\)/);
+  assert.match(agentManager, /const QualityAgent = await loadSubagent\('QualityAgent'\)/);
 });
