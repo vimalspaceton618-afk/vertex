@@ -59,8 +59,10 @@ export class SharedContext {
             }
         }
         if (!fs.existsSync(contextFile)) {
-            fs.mkdirSync(dir, { recursive: true });
-            fs.writeFileSync(contextFile, JSON.stringify({}, null, 2));
+            fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+            if (process.platform !== 'win32') fs.chmodSync(dir, 0o700);
+            fs.writeFileSync(contextFile, JSON.stringify({}, null, 2), { mode: 0o600 });
+            if (process.platform !== 'win32') fs.chmodSync(contextFile, 0o600);
         }
     }
 
@@ -86,8 +88,11 @@ export class SharedContext {
             }
         }
         data[key] = value;
-        fs.mkdirSync(path.dirname(contextFile), { recursive: true });
-        fs.writeFileSync(contextFile, JSON.stringify(data, null, 2));
+        fs.mkdirSync(path.dirname(contextFile), { recursive: true, mode: 0o700 });
+        if (process.platform !== 'win32') fs.chmodSync(path.dirname(contextFile), 0o700);
+        fs.writeFileSync(contextFile, JSON.stringify(data, null, 2), { mode: 0o600 });
+        // `mode` only affects creation; also tighten permissions on an existing state file.
+        if (process.platform !== 'win32') fs.chmodSync(contextFile, 0o600);
     }
 
     static updateSession(patch: Partial<SessionContext>) {
