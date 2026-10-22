@@ -1,5 +1,6 @@
 import { Tool } from './Tool.js';
 import * as fs from 'fs/promises';
+import { constants } from 'node:fs';
 import * as path from 'path';
 import { resolveInsideWorkspace } from './PathSecurity.js';
 import { getClient } from '../core/llm.js';
@@ -36,13 +37,25 @@ export class AnalyzeImageTool extends Tool {
             const mimeType = mimeTypes[ext];
             if (!mimeType) return '[VISION ERROR]: Only JPG, PNG, WEBP, and GIF images are supported.';
 
-            const stat = await fs.stat(safePath);
-            if (!stat.isFile()) return '[VISION ERROR]: imagePath must refer to a regular file.';
-            const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-            if (stat.size <= 0 || stat.size > MAX_IMAGE_BYTES) {
-                return '[VISION ERROR]: Image must be between 1 byte and 20 MiB.';
+            // Validate and read through the same descriptor to avoid a stat/read race.
+            // O_NOFOLLOW is available on POSIX; workspace validation remains the first boundary.
+            const noFollow = process.platform === 'win32' ? 0 : (constants.O_NOFOLLOW || 0);
+            const handle = await fs.open(safePath, constants.O_RDONLY | noFollow);
+            let fileBuffer: Buffer;
+            try {
+                const stat = await handle.stat();
+                if (!stat.isFile()) return '[VISION ERROR]: imagePath must refer to a regular file.';
+                const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+                if (stat.size <= 0 || stat.size > MAX_IMAGE_BYTES) {
+                    return '[VISION ERROR]: Image must be between 1 byte and 20 MiB.';
+                }
+                fileBuffer = await handle.readFile();
+                if (fileBuffer.length <= 0 || fileBuffer.length > MAX_IMAGE_BYTES) {
+                    return '[VISION ERROR]: Image must be between 1 byte and 20 MiB.';
+                }
+            } finally {
+                await handle.close();
             }
-            const fileBuffer = await fs.readFile(safePath);
             
             const base64Image = fileBuffer.toString('base64');
             const dataUrl = `data:${mimeType};base64,${base64Image}`;
