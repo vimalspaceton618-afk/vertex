@@ -12,6 +12,11 @@ function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-cli-smoke-'));
 }
 
+function removeTempDir(directory) {
+  // Windows may briefly keep newly-created files locked (for example by its scanner).
+  fs.rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+}
+
 function runCli(args, cwd, home) {
   const env = { ...process.env, HOME: home, USERPROFILE: home };
   for (const key of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'AI_MODEL', 'BRAIN_MODE', 'LOCAL_MODEL', 'LOCAL_BASE_URL', 'WORKSPACE_ROOT', 'VERTEX_WORKSPACE_ROOT']) {
@@ -50,8 +55,8 @@ test('CLI init is idempotent and does not initialize global runtime state', () =
     assert.equal(fs.existsSync(path.join(home, '.vertexcli', 'config.json')), false,
       'init must not initialize global agent runtime configuration');
   } finally {
-    fs.rmSync(workspace, { recursive: true, force: true });
-    fs.rmSync(home, { recursive: true, force: true });
+    removeTempDir(workspace);
+    removeTempDir(home);
   }
 });
 
@@ -72,8 +77,8 @@ test('CLI doctor --json is parseable, redacts secrets, and has no agent-startup 
     assert.equal(fs.existsSync(path.join(home, '.vertexcli', 'config.json')), false,
       'doctor must not create global config or start an agent task');
   } finally {
-    fs.rmSync(workspace, { recursive: true, force: true });
-    fs.rmSync(home, { recursive: true, force: true });
+    removeTempDir(workspace);
+    removeTempDir(home);
   }
 });
 
@@ -92,8 +97,8 @@ test('CLI doctor does not echo credentials embedded in provider URLs', () => {
     assert.ok(report.items.some((item) => item.name === 'Cloud provider URL' && item.status === 'warn'));
     assert.doesNotMatch(result.stdout, /private-cli-user|private-cli-password|example\.invalid/);
   } finally {
-    fs.rmSync(workspace, { recursive: true, force: true });
-    fs.rmSync(home, { recursive: true, force: true });
+    removeTempDir(workspace);
+    removeTempDir(home);
   }
 });
 
@@ -119,9 +124,9 @@ test('CLI init refuses a symlinked .env and preserves the link target', (t) => {
     assert.equal(fs.lstatSync(envPath).isSymbolicLink(), true);
     assert.equal(fs.existsSync(path.join(home, '.vertexcli', 'config.json')), false);
   } finally {
-    fs.rmSync(workspace, { recursive: true, force: true });
-    fs.rmSync(home, { recursive: true, force: true });
-    fs.rmSync(outside, { recursive: true, force: true });
+    removeTempDir(workspace);
+    removeTempDir(home);
+    removeTempDir(outside);
   }
 });
 
@@ -147,8 +152,8 @@ test('CLI doctor warns on a symlinked workspace .env without reading its secret'
     assert.doesNotMatch(result.stdout, new RegExp(secret));
     assert.equal(fs.existsSync(path.join(home, '.vertexcli', 'config.json')), false);
   } finally {
-    fs.rmSync(workspace, { recursive: true, force: true });
-    fs.rmSync(home, { recursive: true, force: true });
-    fs.rmSync(outside, { recursive: true, force: true });
+    removeTempDir(workspace);
+    removeTempDir(home);
+    removeTempDir(outside);
   }
 });

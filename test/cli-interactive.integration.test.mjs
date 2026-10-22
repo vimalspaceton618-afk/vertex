@@ -13,7 +13,7 @@ function makeTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-function waitForOutput(child, getOutput, needle, timeoutMs = 10_000, startIndex = 0) {
+function waitForOutput(child, getOutput, needle, timeoutMs = 10_000, startIndex = 0, getErrorOutput = () => '') {
   if (getOutput().slice(startIndex).includes(needle)) return Promise.resolve();
 
   return new Promise((resolve, reject) => {
@@ -34,7 +34,7 @@ function waitForOutput(child, getOutput, needle, timeoutMs = 10_000, startIndex 
       }
     };
     const onExit = (code, signal) => {
-      fail(`CLI exited before ${JSON.stringify(needle)} (code=${code}, signal=${signal}). Output tail: ${getOutput().slice(-500)}`);
+      fail(`CLI exited before ${JSON.stringify(needle)} (code=${code}, signal=${signal}). Stdout tail: ${getOutput().slice(-500)}. Stderr tail: ${getErrorOutput().slice(-1000)}`);
     };
     const onError = (error) => fail(`CLI failed to start: ${error.message}`);
     const timer = setTimeout(() => {
@@ -48,7 +48,7 @@ function waitForOutput(child, getOutput, needle, timeoutMs = 10_000, startIndex 
 }
 
 function waitForExit(child, timeoutMs = 5_000) {
-  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
+  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(child.exitCode);
 
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -104,13 +104,21 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
   child.stdout.on('data', (chunk) => { stdout += chunk; });
   child.stderr.on('data', (chunk) => { stderr += chunk; });
 
-  t.after(() => {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-    fs.rmSync(cwd, { recursive: true, force: true });
-    fs.rmSync(home, { recursive: true, force: true });
+  t.after(async () => {
+    // Stop the spawned TUI and wait for Windows to release its workspace handles before cleanup.
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill();
+      try {
+        await waitForExit(child, 5_000);
+      } catch {
+        child.kill();
+      }
+    }
+    fs.rmSync(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
-  await waitForOutput(child, () => stdout, 'Trust this workspace');
+  await waitForOutput(child, () => stdout, 'Trust this workspace', 10_000, 0, () => stderr);
   child.stdin.write('1');
   await waitForOutput(child, () => stdout, 'Welcome to VERTEX');
 

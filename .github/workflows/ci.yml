@@ -46,6 +46,24 @@ jobs:
         run: |
           node -e 'const a = require(process.env.RUNNER_TEMP + "/npm-audit.json"); const v = a.metadata?.vulnerabilities || {}; console.log("Dependency security gate:", JSON.stringify(v)); if ((v.high || 0) > 0 || (v.critical || 0) > 0) process.exit(1)'
 
+  windows-build-and-test:
+    name: Windows Node 24 build and test
+    runs-on: windows-latest
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies and build
+        run: npm ci
+      - name: Run full regression suite on Windows
+        run: npm test
+
   global-install-smoke:
     name: Global install smoke test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
