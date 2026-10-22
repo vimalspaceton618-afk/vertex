@@ -44,3 +44,16 @@ test('skill reader rejects oversized content and absent skill directories list a
   assert.deepEqual(listWorkspaceSkills(path.join(root, 'missing')), []);
   assert.throws(() => readWorkspaceSkill('large', root), /exceeds the 65536-byte limit/);
 });
+
+test('skill discovery refuses a symlinked skills directory', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-skills-link-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const outside = path.join(root, 'outside');
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'external.md'), '# external\\n');
+  fs.mkdirSync(path.join(root, '.vertex'));
+  fs.symlinkSync(outside, path.join(root, '.vertex', 'skills'), 'dir');
+
+  assert.deepEqual(listWorkspaceSkills(root), []);
+  assert.throws(() => readWorkspaceSkill('external', root), /real directory, not a symlink/);
+});
