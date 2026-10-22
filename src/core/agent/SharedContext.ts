@@ -103,10 +103,15 @@ export class SharedContext {
             // Recover from malformed state without following alternate paths.
         }
         data[key] = value;
-        const noFollow = process.platform === 'win32' ? 0 : (fs.constants.O_NOFOLLOW || 0);
-        const fd = fs.openSync(contextFile, fs.constants.O_WRONLY | fs.constants.O_TRUNC | noFollow);
+        // Windows can reject the POSIX O_WRONLY | O_TRUNC numeric flag combination.
+        // Open the already-existing file for update, verify the descriptor, then truncate it.
+        // POSIX keeps O_NOFOLLOW and truncates during open to prevent following a symlink.
+        const fd = process.platform === 'win32'
+            ? fs.openSync(contextFile, 'r+')
+            : fs.openSync(contextFile, fs.constants.O_WRONLY | fs.constants.O_TRUNC | (fs.constants.O_NOFOLLOW || 0));
         try {
             if (!fs.fstatSync(fd).isFile()) throw new Error('VERTEX state file must be a regular file.');
+            if (process.platform === 'win32') fs.ftruncateSync(fd, 0);
             fs.writeFileSync(fd, JSON.stringify(data, null, 2));
             if (process.platform !== 'win32') fs.fchmodSync(fd, 0o600);
         } finally {
