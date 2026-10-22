@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Text, useApp, useInput, Static } from 'ink';
+import { Box, Text, useApp, useInput, useStdout, Static } from 'ink';
 import path from 'path';
 import os from 'os';
 import { AgentManager } from './core/agent/AgentManager.js';
@@ -10,7 +10,7 @@ import { initializeWorkspaceConfig } from './core/setup.js';
 import { describeScope } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
-import { VertexHeader, AgentStatusMonitor, PermissionPrompt, TaskResultSummary, type TaskLifecycleStatus } from './components.js';
+import { VertexHeader, AgentStatusMonitor, PermissionPrompt, TaskResultSummary, getTerminalLayoutWidth, type TaskLifecycleStatus } from './components.js';
 import { listWorkspaceSkills, readWorkspaceSkill } from './core/skills/SkillLoader.js';
 import { forceSafeMode, getAutonomyMode } from './core/policy/ModeControl.js';
 
@@ -21,9 +21,9 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function TrustGate({ trustCursor }: { trustCursor: number }) {
+function TrustGate({ trustCursor, width }: { trustCursor: number; width: number }) {
   return (
-    <Box flexDirection="column" padding={1} borderStyle="round" borderColor="dim">
+    <Box flexDirection="column" width={width} padding={1} borderStyle="round" borderColor="dim">
       <Text color="cyan" bold>VERTEX ISOLATION WARNING</Text>
       <Box marginY={1}>
         <Text dimColor>
@@ -95,7 +95,7 @@ function ActiveStreamView({ content, role }: { content: string; role: 'user' | '
   );
 }
 
-function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queuedQueries }: { input: string, cursor: number, isStreaming: boolean, selectedSuggestionIndex: number, queuedQueries: string[] }) {
+function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queuedQueries, width }: { input: string, cursor: number, isStreaming: boolean, selectedSuggestionIndex: number, queuedQueries: string[], width: number }) {
   const beforeCursor = input.slice(0, cursor);
   const cursorChar = input[cursor] || ' ';
   const afterCursor = input.slice(cursor + 1);
@@ -106,7 +106,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     : [];
 
   return (
-    <Box flexDirection="column" width={97}>
+    <Box flexDirection="column" width={width}>
       {/* Input Prompt Area */}
       <Box marginTop={1} paddingX={0}>
         <Text bold color={isStreaming ? "yellow" : "white"}>{'> '} </Text>
@@ -141,7 +141,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
       {/* Bottom Divider */}
       <Box marginTop={0}>
-        <Text color="gray">{"─".repeat(97)}</Text>
+        <Text color="gray">{"─".repeat(Math.max(1, width - 1))}</Text>
       </Box>
 
       {/* Dynamic Suggestions or Help */}
@@ -180,6 +180,8 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
   const App = () => {
   const { exit } = useApp();
+  const { stdout } = useStdout();
+  const layoutWidth = getTerminalLayoutWidth(stdout.columns);
   const [isTrusted, setIsTrusted] = useState(false);
   const [trustCursor, setTrustCursor] = useState(1);
   const [input, setInput] = useState('');
@@ -1099,14 +1101,14 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   });
 
   if (!isTrusted) {
-    return <TrustGate trustCursor={trustCursor} />;
+    return <TrustGate trustCursor={trustCursor} width={layoutWidth} />;
   }
 
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" width={layoutWidth}>
       <VertexHeader />
       {history.length === 0 && !isStreaming && (
-        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1} marginY={1}>
+        <Box flexDirection="column" width={layoutWidth} borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1} marginY={1}>
           <Text color="cyan" bold>Welcome to VERTEX</Text>
           <Text color="white">Your model-agnostic coding and security workspace.</Text>
           <Box marginTop={1} flexDirection="column">
@@ -1178,6 +1180,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
           isStreaming={isStreaming} 
           selectedSuggestionIndex={selectedSuggestionIndex} 
           queuedQueries={queuedQueries}
+          width={layoutWidth}
         />
       )}
     </Box>

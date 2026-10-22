@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import Spinner from 'ink-spinner';
+import { APP_VERSION_LABEL } from './version.js';
+
+export function getTerminalLayoutWidth(columns: number | undefined): number {
+  const measuredColumns = Number.isFinite(columns) && typeof columns === 'number' && columns > 0 ? columns : 80;
+  return Math.max(40, Math.min(120, measuredColumns));
+}
 
 const RobotLogo = () => (
   <Box flexDirection="column" alignItems="center" marginY={1}>
@@ -12,11 +18,11 @@ const RobotLogo = () => (
 );
 
 export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> = ({
-  version = 'v0.1.6',
+  version = APP_VERSION_LABEL,
   activeAgent = 'VERTEX'
 }) => {
   const { stdout } = useStdout();
-  const terminalWidth = Math.max(40, Math.min(120, stdout.columns || 80));
+  const terminalWidth = getTerminalLayoutWidth(stdout.columns);
   const innerWidth = terminalWidth - 2;
   const compact = terminalWidth < 72;
   const panelWidth = Math.max(18, Math.floor(innerWidth / 2) - 1);

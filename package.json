@@ -1,6 +1,6 @@
 {
   "name": "vertex-cli",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "description": "Terminal-native agentic cybersecurity and developer CLI",
   "main": "dist/cli.js",
   "bin": {
