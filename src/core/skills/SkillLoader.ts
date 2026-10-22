@@ -60,17 +60,25 @@ export function readWorkspaceSkill(name: string, workspaceRoot?: string): string
     }
     const filePath = path.join(directory, name + '.md');
     const rootReal = fs.realpathSync(directory);
-    const fileStat = fs.lstatSync(filePath);
-    if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
-        throw new Error('Skill must be a regular Markdown file, not a symlink.');
-    }
-    if (fileStat.size > MAX_SKILL_BYTES) {
-        throw new Error(`Skill exceeds the ${MAX_SKILL_BYTES}-byte limit.`);
-    }
-
     const realFile = fs.realpathSync(filePath);
     if (path.dirname(realFile) !== rootReal) {
         throw new Error('Skill path escapes the skills directory.');
     }
-    return fs.readFileSync(realFile, 'utf8');
+
+    // Open without following symlinks where the platform supports O_NOFOLLOW,
+    // then verify the opened descriptor to reduce time-of-check/time-of-use risk.
+    const noFollow = process.platform === 'win32' ? 0 : (fs.constants.O_NOFOLLOW || 0);
+    const fd = fs.openSync(filePath, fs.constants.O_RDONLY | noFollow);
+    try {
+        const fileStat = fs.fstatSync(fd);
+        if (!fileStat.isFile()) {
+            throw new Error('Skill must be a regular Markdown file, not a symlink.');
+        }
+        if (fileStat.size > MAX_SKILL_BYTES) {
+            throw new Error(`Skill exceeds the ${MAX_SKILL_BYTES}-byte limit.`);
+        }
+        return fs.readFileSync(fd, 'utf8');
+    } finally {
+        fs.closeSync(fd);
+    }
 }
