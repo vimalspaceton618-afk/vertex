@@ -22,6 +22,8 @@ export function listWorkspaceSkills(workspaceRoot?: string): SkillSummary[] {
     const directory = getSkillsDirectory(workspaceRoot);
     let entries: fs.Dirent[];
     try {
+        const directoryStat = fs.lstatSync(directory);
+        if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) return [];
         entries = fs.readdirSync(directory, { withFileTypes: true });
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
@@ -52,6 +54,10 @@ export function readWorkspaceSkill(name: string, workspaceRoot?: string): string
     }
 
     const directory = getSkillsDirectory(workspaceRoot);
+    const directoryStat = fs.lstatSync(directory);
+    if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+        throw new Error('Skills directory must be a real directory, not a symlink.');
+    }
     const filePath = path.join(directory, name + '.md');
     const rootReal = fs.realpathSync(directory);
     const fileStat = fs.lstatSync(filePath);
