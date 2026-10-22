@@ -1,8 +1,31 @@
 import { BaseAgent } from './BaseAgent.js';
 import { Tool } from '../../tools/Tool.js';
-import * as subagents from '../../agents/index.js';
 import { SharedContext } from './SharedContext.js';
 import { getPluginManager } from '../../plugins/index.js';
+
+// Keep agent modules isolated: loading AgentManager must not eagerly load every specialist.
+// This also prevents optional/offensive tooling from blocking ordinary CLI startup.
+const SUBAGENT_LOADERS: Record<string, () => Promise<Record<string, unknown>>> = {
+    ExploreAgent: () => import('../../agents/ExploreAgent.js'),
+    PlanAgent: () => import('../../agents/PlanAgent.js'),
+    DeveloperAgent: () => import('../../agents/DeveloperAgent.js'),
+    QualityAgent: () => import('../../agents/QualityAgent.js'),
+    DevOpsAgent: () => import('../../agents/DevOpsAgent.js'),
+    BrowserAgent: () => import('../../agents/BrowserAgent.js'),
+    NetworkAgent: () => import('../../agents/NetworkAgent.js'),
+    CyberAgent: () => import('../../agents/CyberAgent.js'),
+    NyxAgent: () => import('../../agents/NyxAgent.js'),
+    PhantomAgent: () => import('../../agents/PhantomAgent.js'),
+    SentinelAgent: () => import('../../agents/SentinelAgent.js'),
+    ReconAgent: () => import('../../agents/ReconAgent.js')
+};
+
+async function loadSubagent(agentName: string): Promise<any | undefined> {
+    const loadModule = SUBAGENT_LOADERS[agentName];
+    if (!loadModule) return undefined;
+    const module = await loadModule();
+    return (module as Record<string, unknown>)[agentName];
+}
 
 class DelegateTaskTool implements Tool {
     name = "delegate_task";
@@ -70,7 +93,7 @@ class DelegateTaskTool implements Tool {
             maxIterations,
             maxDurationMs
         } = args;
-        const AgentClass = (subagents as any)[agentName];
+        const AgentClass = await loadSubagent(agentName);
         if (!AgentClass) {
             return `[ERROR]: Failed to delegate to ${agentName}. Agent not found.`;
         }
@@ -111,7 +134,7 @@ class DelegateTaskTool implements Tool {
 
         const shouldVerify = agentName === "DeveloperAgent" && requiresVerification !== false && !signal?.aborted;
         if (shouldVerify) {
-            const QualityAgent = (subagents as any).QualityAgent;
+            const QualityAgent = await loadSubagent('QualityAgent');
             if (QualityAgent) {
                 yield `\n[ROUTING]: Auto-running verification via QualityAgent...\n`;
                 const verifier = new QualityAgent();
