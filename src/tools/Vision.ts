@@ -1,5 +1,7 @@
 import { Tool } from './Tool.js';
 import * as fs from 'fs/promises';
+import * as path from 'path';
+import { resolveInsideWorkspace } from './PathSecurity.js';
 import { getClient } from '../core/llm.js';
 
 export class AnalyzeImageTool extends Tool {
@@ -17,15 +19,30 @@ export class AnalyzeImageTool extends Tool {
 
     async execute(args: { imagePath: string, prompt: string }): Promise<string> {
         try {
-            // Read the image file
-            const fileBuffer = await fs.readFile(args.imagePath);
-            
-            // Determine mime type from extension
-            const ext = args.imagePath.split('.').pop()?.toLowerCase();
-            let mimeType = 'image/jpeg';
-            if (ext === 'png') mimeType = 'image/png';
-            if (ext === 'webp') mimeType = 'image/webp';
-            if (ext === 'gif') mimeType = 'image/gif';
+            if (typeof args.imagePath !== 'string' || !args.imagePath.trim()) {
+                return '[VISION ERROR]: imagePath is required.';
+            }
+            if (typeof args.prompt !== 'string' || args.prompt.length > 4000) {
+                return '[VISION ERROR]: prompt must be a string of at most 4000 characters.';
+            }
+
+            // Restrict image reads to the active workspace and reject symlink escapes.
+            const safePath = resolveInsideWorkspace(args.imagePath);
+            const ext = path.extname(safePath).slice(1).toLowerCase();
+            const mimeTypes: Record<string, string> = {
+                jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
+                webp: 'image/webp', gif: 'image/gif'
+            };
+            const mimeType = mimeTypes[ext];
+            if (!mimeType) return '[VISION ERROR]: Only JPG, PNG, WEBP, and GIF images are supported.';
+
+            const stat = await fs.stat(safePath);
+            if (!stat.isFile()) return '[VISION ERROR]: imagePath must refer to a regular file.';
+            const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+            if (stat.size <= 0 || stat.size > MAX_IMAGE_BYTES) {
+                return '[VISION ERROR]: Image must be between 1 byte and 20 MiB.';
+            }
+            const fileBuffer = await fs.readFile(safePath);
             
             const base64Image = fileBuffer.toString('base64');
             const dataUrl = `data:${mimeType};base64,${base64Image}`;

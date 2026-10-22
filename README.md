@@ -206,6 +206,10 @@ Use the interactive slash command interface:
 - `/open <url>` — Inspect a URL (title/metadata)
 - `/summarize-url <url>` — Extract & summarize page content
 - `/screenshot-url <url>` — Capture a full-page screenshot
+- `/mode` — Show the current autonomy mode
+- `/mode safe` — Downgrade the current process to `semi_auto` (cannot enable full-auto mode)
+- `/skills` — List local Markdown skills in `.vertex/skills/`
+- `/skills show <name>` — Inspect a local skill as untrusted text (never executed)
 - `/health` — Inspect runtime status
 - `/doctor` — Check environment/configuration safely
 - `/init` — Create a private local `.env` template without overwriting an existing file
@@ -213,6 +217,12 @@ Use the interactive slash command interface:
 - `/exit` — Terminate session
 
 ---
+
+### Local skill security
+
+Local skills are optional Markdown reference files stored in `.vertex/skills/<name>.md`.
+Use conservative lowercase names (letters, digits, hyphens, underscores); each file is limited to 64 KiB.
+VERTEX ignores symlinked skill files/directories and rejects traversal attempts. Skill content is treated as untrusted data: viewing a skill does not execute code, grant tools, or change policy. Do not store API keys, passwords, or other secrets in skill files.
 
 ## Contributing
 
