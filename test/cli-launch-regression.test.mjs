@@ -8,8 +8,9 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cliPath = path.join(root, 'dist', 'cli.js');
-const cliSource = fs.readFileSync(path.join(root, 'src', 'cli.tsx'), 'utf8');
-const uiSource = fs.readFileSync(path.join(root, 'src', 'ui.tsx'), 'utf8');
+const normalizeLineEndings = (source) => source.replace(/\r\n/g, '\n');
+const cliSource = normalizeLineEndings(fs.readFileSync(path.join(root, 'src', 'cli.tsx'), 'utf8'));
+const uiSource = normalizeLineEndings(fs.readFileSync(path.join(root, 'src', 'ui.tsx'), 'utf8'));
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-launch-regression-'));
