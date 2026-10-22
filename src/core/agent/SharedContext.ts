@@ -70,12 +70,21 @@ export class SharedContext {
 
     static get(key: string): any {
         const contextFile = this.getContextFile();
-        if (!fs.existsSync(contextFile)) return null;
+        let fd: number | undefined;
         try {
-            const data = JSON.parse(fs.readFileSync(contextFile, 'utf-8'));
-            return data[key];
-        } catch (e) {
+            const noFollow = process.platform === 'win32' ? 0 : (fs.constants.O_NOFOLLOW || 0);
+            fd = fs.openSync(contextFile, fs.constants.O_RDONLY | noFollow);
+            if (!fs.fstatSync(fd).isFile()) throw new Error('VERTEX state file must be a regular file.');
+            const data = JSON.parse(fs.readFileSync(fd, 'utf-8'));
+            return data && typeof data === 'object' && !Array.isArray(data) ? data[key] : null;
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+            if ((error as NodeJS.ErrnoException).code === 'ELOOP') {
+                throw new Error('VERTEX state file must not be a symlink.');
+            }
             return null;
+        } finally {
+            if (fd !== undefined) fs.closeSync(fd);
         }
     }
 
@@ -94,9 +103,15 @@ export class SharedContext {
             // Recover from malformed state without following alternate paths.
         }
         data[key] = value;
-        fs.writeFileSync(contextFile, JSON.stringify(data, null, 2), { mode: 0o600 });
-        // `mode` only affects creation; also tighten permissions on an existing state file.
-        if (process.platform !== 'win32') fs.chmodSync(contextFile, 0o600);
+        const noFollow = process.platform === 'win32' ? 0 : (fs.constants.O_NOFOLLOW || 0);
+        const fd = fs.openSync(contextFile, fs.constants.O_WRONLY | fs.constants.O_TRUNC | noFollow);
+        try {
+            if (!fs.fstatSync(fd).isFile()) throw new Error('VERTEX state file must be a regular file.');
+            fs.writeFileSync(fd, JSON.stringify(data, null, 2));
+            if (process.platform !== 'win32') fs.fchmodSync(fd, 0o600);
+        } finally {
+            fs.closeSync(fd);
+        }
     }
 
     static updateSession(patch: Partial<SessionContext>) {
