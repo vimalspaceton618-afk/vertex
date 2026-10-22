@@ -11,6 +11,7 @@ import { describeScope } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
 import { VertexHeader, AgentStatusMonitor, PermissionPrompt, TaskResultSummary, type TaskLifecycleStatus } from './components.js';
+import { listWorkspaceSkills, readWorkspaceSkill } from './core/skills/SkillLoader.js';
 
 type HistoryMessage = { id: string; role: 'user' | 'assistant'; content: string };
 type ConfirmPrompt = { message: string; resolve: (value: boolean) => void };
@@ -67,6 +68,7 @@ const COMMANDS = [
   { name: '/grill-me', desc: 'Interview to clarify task requirements' },
   { name: '/learn', desc: 'Extract and save learned rules' },
   { name: '/skill', desc: 'Query science databases: /skill <...>' },
+  { name: '/skills', desc: 'List or inspect local Markdown skills safely' },
   { name: '/gpu', desc: 'Manage GPU jobs: /gpu <action>' }
 ];
 
@@ -679,6 +681,31 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
     if (lowerQuery === '/learn') {
       runDelegatedStream(query, 'Analyze the conversation history. Extract any lessons, rules, guidelines, or reusable patterns we established, and save them in markdown format to ~/.vertex/learned_rules.md.');
+      return;
+    }
+
+    if (lowerQuery === '/skills' || lowerQuery.startsWith('/skills show ')) {
+      setPromptValue('');
+      try {
+        if (lowerQuery.startsWith('/skills show ')) {
+          const skillName = query.slice('/skills show '.length).trim();
+          if (!skillName) {
+            appendTurn(query, 'Usage: /skills show <name>');
+            return;
+          }
+          const skillText = readWorkspaceSkill(skillName);
+          appendTurn(query, `[LOCAL SKILL: ${skillName}]\nUntrusted Markdown content only; VERTEX does not execute skill files.\n\n${skillText}`);
+          return;
+        }
+        const skills = listWorkspaceSkills();
+        if (skills.length === 0) {
+          appendTurn(query, 'No local Markdown skills found. Add trusted files as .vertex/skills/<name>.md (max 64 KiB each). Files are treated as data, not executable code.');
+          return;
+        }
+        appendTurn(query, 'Local Markdown skills (read-only; not executed):\n' + skills.map((skill) => `- ${skill.name} (${skill.bytes} bytes)`).join('\n') + '\nUse /skills show <name> to inspect a file.');
+      } catch (error) {
+        appendTurn(query, `[SKILL LOADER ERROR]: ${error instanceof Error ? error.message : String(error)}`);
+      }
       return;
     }
 
