@@ -6,6 +6,19 @@ import path from 'node:path';
 import { CodeSearchTool } from '../dist/tools/CodeSearch.js';
 import { AnalyzeImageTool } from '../dist/tools/Vision.js';
 
+function createSymlinkOrSkip(t, target, linkPath, type) {
+  try {
+    fs.symlinkSync(target, linkPath, type);
+    return true;
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOSYS', 'UNKNOWN'].includes(error?.code)) {
+      t.skip('Symlink creation is unavailable on this platform (' + error.code + ').');
+      return false;
+    }
+    throw error;
+  }
+}
+
 test('code search rejects a target path that resolves outside the workspace', async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-search-path-'));
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-search-outside-'));
@@ -13,7 +26,7 @@ test('code search rejects a target path that resolves outside the workspace', as
   try {
     process.env.VERTEX_WORKSPACE_ROOT = root;
     fs.writeFileSync(path.join(outside, 'secret.txt'), 'workspace boundary marker');
-    fs.symlinkSync(outside, path.join(root, 'external'), 'dir');
+    if (!createSymlinkOrSkip(t, outside, path.join(root, 'external'), 'dir')) return;
     const tool = new CodeSearchTool();
     await assert.rejects(() => tool.execute({ pattern: 'boundary marker', targetPath: path.join(root, 'external') }), /Path escapes workspace root/);
   } finally {
