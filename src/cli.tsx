@@ -2,6 +2,7 @@
 import React from 'react';
 import { render } from 'ink';
 import { Command } from 'commander';
+import { APP_VERSION } from './version.js';
 import { ConfigManager } from './core/config.js';
 import { collectDiagnostics, formatDiagnosticReport } from './core/diagnostics.js';
 import { initializeWorkspaceConfig } from './core/setup.js';
@@ -29,7 +30,7 @@ const program = new Command();
 program
   .name('vertex')
   .description('VERTEX Multi-Agent OS')
-  .version('3.0.0')
+  .version(APP_VERSION)
   .option('--run <prompt>', 'Run in headless mode with a prompt')
   .option('--json', 'Output as JSON in headless mode')
   .option('--yes', 'Auto-approve tool confirmations in headless mode')
