@@ -64,17 +64,39 @@ test('unrestricted lab mode does not override explicit blocked targets', () => {
   }
 });
 
-test('workspace path resolver rejects traversal and symlink escapes', () => {
+test('workspace path resolver rejects traversal and absolute outside paths', () => {
   const previousRoot = process.env.VERTEX_WORKSPACE_ROOT;
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-workspace-test-'));
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-outside-test-'));
   try {
     process.env.VERTEX_WORKSPACE_ROOT = workspace;
     fs.writeFileSync(path.join(outside, 'secret.txt'), 'outside workspace');
-    fs.symlinkSync(outside, path.join(workspace, 'outside-link'), 'dir');
-
     assert.throws(() => resolveInsideWorkspace('../outside/secret.txt'), /escapes workspace root/i);
     assert.throws(() => resolveInsideWorkspace(path.join(outside, 'secret.txt')), /escapes workspace root/i);
+  } finally {
+    if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
+    else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
+    fs.rmSync(workspace, { recursive: true, force: true });
+    fs.rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test('workspace path resolver rejects symlink escapes when symlinks are available', (t) => {
+  const previousRoot = process.env.VERTEX_WORKSPACE_ROOT;
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-workspace-link-test-'));
+  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-outside-link-test-'));
+  try {
+    process.env.VERTEX_WORKSPACE_ROOT = workspace;
+    fs.writeFileSync(path.join(outside, 'secret.txt'), 'outside workspace');
+    try {
+      fs.symlinkSync(outside, path.join(workspace, 'outside-link'), 'dir');
+    } catch (error) {
+      if (['EPERM', 'EACCES', 'ENOSYS', 'UNKNOWN'].includes(error?.code)) {
+        t.skip('Symlink creation is unavailable on this platform (' + error.code + ').');
+        return;
+      }
+      throw error;
+    }
     assert.throws(() => resolveInsideWorkspace('outside-link/secret.txt'), /escapes workspace root/i);
     assert.throws(() => resolveInsideWorkspace('outside-link/not-created/nested/file.txt'), /escapes workspace root/i);
   } finally {
