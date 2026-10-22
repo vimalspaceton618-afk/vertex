@@ -59,6 +59,10 @@ export function readWorkspaceSkill(name: string, workspaceRoot?: string): string
         throw new Error('Skills directory must be a real directory, not a symlink.');
     }
     const filePath = path.join(directory, name + '.md');
+    const candidateStat = fs.lstatSync(filePath);
+    if (!candidateStat.isFile() || candidateStat.isSymbolicLink()) {
+        throw new Error('Skill must be a regular Markdown file, not a symlink.');
+    }
     const rootReal = fs.realpathSync(directory);
     const realFile = fs.realpathSync(filePath);
     if (path.dirname(realFile) !== rootReal) {
