@@ -12,6 +12,18 @@ function fixture() {
   return { root, skills };
 }
 
+function createSymlinkOrSkip(t, target, linkPath, type) {
+  try {
+    fs.symlinkSync(target, linkPath, type);
+    return true;
+  } catch (error) {
+    if (['EPERM', 'EACCES', 'ENOSYS', 'UNKNOWN'].includes(error?.code)) {
+      t.skip('Symlink creation is unavailable on this platform (' + error.code + ').');
+      return false;
+    }
+    throw error;
+  }
+}
 test('skill discovery is Markdown-only, sorted, and ignores invalid names and symlinks', (t) => {
   const { root, skills } = fixture();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -19,8 +31,6 @@ test('skill discovery is Markdown-only, sorted, and ignores invalid names and sy
   fs.writeFileSync(path.join(skills, 'alpha_2.md'), '# Alpha\n');
   fs.writeFileSync(path.join(skills, 'UPPER.md'), '# ignored\n');
   fs.writeFileSync(path.join(skills, 'run.js'), 'throw new Error("must never execute")');
-  fs.symlinkSync(path.join(skills, 'zeta.md'), path.join(skills, 'linked.md'));
-
   assert.deepEqual(listWorkspaceSkills(root).map((skill) => skill.name), ['alpha_2', 'zeta']);
 });
 
@@ -29,7 +39,7 @@ test('skill reader rejects traversal and never follows symlinks', (t) => {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.writeFileSync(path.join(skills, 'safe.md'), '# Safe skill\n');
   fs.writeFileSync(path.join(root, 'outside.md'), '# Outside\n');
-  fs.symlinkSync(path.join(root, 'outside.md'), path.join(skills, 'linked.md'));
+  if (!createSymlinkOrSkip(t, path.join(root, 'outside.md'), path.join(skills, 'linked.md'))) return;
 
   assert.equal(readWorkspaceSkill('safe', root), '# Safe skill\n');
   assert.throws(() => readWorkspaceSkill('../outside', root), /Invalid skill name/);
@@ -52,8 +62,17 @@ test('skill discovery refuses a symlinked skills directory', (t) => {
   fs.mkdirSync(outside);
   fs.writeFileSync(path.join(outside, 'external.md'), '# external\\n');
   fs.mkdirSync(path.join(root, '.vertex'));
-  fs.symlinkSync(outside, path.join(root, '.vertex', 'skills'), 'dir');
+  if (!createSymlinkOrSkip(t, outside, path.join(root, '.vertex', 'skills'), 'dir')) return;
 
   assert.deepEqual(listWorkspaceSkills(root), []);
   assert.throws(() => readWorkspaceSkill('external', root), /real directory, not a symlink/);
+});
+
+test('skill discovery ignores symlinked Markdown entries when symlinks are available', (t) => {
+  const { root, skills } = fixture();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(skills, 'safe.md'), '# safe\\n');
+  fs.writeFileSync(path.join(root, 'outside.md'), '# outside\\n');
+  if (!createSymlinkOrSkip(t, path.join(root, 'outside.md'), path.join(skills, 'linked.md'))) return;
+  assert.deepEqual(listWorkspaceSkills(root).map((skill) => skill.name), ['safe']);
 });
