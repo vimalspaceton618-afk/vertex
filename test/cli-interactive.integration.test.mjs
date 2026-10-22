@@ -13,7 +13,7 @@ function makeTempDir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-function waitForOutput(child, getOutput, needle, timeoutMs = 10_000, startIndex = 0) {
+function waitForOutput(child, getOutput, needle, timeoutMs = 10_000, startIndex = 0, getErrorOutput = () => '') {
   if (getOutput().slice(startIndex).includes(needle)) return Promise.resolve();
 
   return new Promise((resolve, reject) => {
@@ -34,7 +34,7 @@ function waitForOutput(child, getOutput, needle, timeoutMs = 10_000, startIndex 
       }
     };
     const onExit = (code, signal) => {
-      fail(`CLI exited before ${JSON.stringify(needle)} (code=${code}, signal=${signal}). Output tail: ${getOutput().slice(-500)}`);
+      fail(`CLI exited before ${JSON.stringify(needle)} (code=${code}, signal=${signal}). Stdout tail: ${getOutput().slice(-500)}. Stderr tail: ${getErrorOutput().slice(-1000)}`);
     };
     const onError = (error) => fail(`CLI failed to start: ${error.message}`);
     const timer = setTimeout(() => {
@@ -110,7 +110,7 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
     fs.rmSync(home, { recursive: true, force: true });
   });
 
-  await waitForOutput(child, () => stdout, 'Trust this workspace');
+  await waitForOutput(child, () => stdout, 'Trust this workspace', 10_000, 0, () => stderr);
   child.stdin.write('1');
   await waitForOutput(child, () => stdout, 'Welcome to VERTEX');
 
