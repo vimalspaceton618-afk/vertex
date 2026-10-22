@@ -476,6 +476,26 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
     const lowerQuery = query.toLowerCase();
 
+    const missingArgumentUsage: Record<string, string> = {
+      '/phantom': 'Usage: /phantom <red team prompt>\nExample: /phantom run full kill-chain on 192.168.1.50',
+      '/recon': 'Usage: /recon <target>\nExample: /recon scan and enumerate subdomains for target.com',
+      '/nyx': 'Usage: /nyx <offensive security prompt>\nExample: /nyx scan 192.168.1.0/24 with nmap service detection',
+      '/search': 'Usage: /search <query>\nExample: /search kali linux nmap nse scripts',
+      '/open': 'Usage: /open <url>',
+      '/summarize-url': 'Usage: /summarize-url <url>',
+      '/screenshot-url': 'Usage: /screenshot-url <url> [filePath]',
+      '/goal': 'Usage: /goal <objective>',
+      '/schedule': 'Usage: /schedule <seconds> <command>\nExample: /schedule 30 /health',
+      '/skill': 'Usage: /skill <ncbi|uniprot|pubchem|pubmed|arxiv> <query>',
+      '/safe-sandbox': 'Usage: /safe-sandbox [--image alpine:latest|python:3.12-alpine|node:22-alpine] <command>',
+      '/sandbox': 'Usage: /sandbox <shell command>\nExample: /sandbox ls -la'
+    };
+    if (Object.prototype.hasOwnProperty.call(missingArgumentUsage, lowerQuery)) {
+      setPromptValue('');
+      appendTurn(query, missingArgumentUsage[lowerQuery]);
+      return;
+    }
+
     if (lowerQuery === '?' || lowerQuery === '/?') {
       setPromptValue('');
       appendTurn(query, 'Shortcuts:\n? - Show shortcuts\n/ - List commands\nCtrl+C - Exit\nUp/Down Arrow - Navigate history\nLeft/Right Arrow - Move cursor');

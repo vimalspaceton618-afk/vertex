@@ -63,7 +63,12 @@ program.command('init')
     }
   });
 
-program.parse(process.argv);
+// With no arguments, the documented default is the interactive TUI. Commander treats
+// a root command with subcommands as a help invocation when parse() sees no arguments,
+// so only parse explicit CLI arguments; no-argument startup falls through to the UI.
+if (process.argv.length > 2) {
+  program.parse(process.argv);
+}
 const options = program.opts();
 
 if (!commandHandled) {
