@@ -27,3 +27,44 @@ test('shared state directory and file use restrictive POSIX permissions', { skip
     fs.rmSync(workspace, { recursive: true, force: true });
   }
 });
+
+test('shared state refuses symlinked state files and does not modify their targets', { skip: process.platform === 'win32' }, (t) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-state-symlink-'));
+  const previousRoot = process.env.VERTEX_WORKSPACE_ROOT;
+  const outside = path.join(workspace, 'outside.json');
+  const stateDir = path.join(workspace, '.vertex');
+  fs.mkdirSync(stateDir, { recursive: true });
+  fs.writeFileSync(outside, '{"outside":true}', { mode: 0o644 });
+  fs.symlinkSync(outside, path.join(stateDir, 'state.json'));
+
+  try {
+    process.env.VERTEX_WORKSPACE_ROOT = workspace;
+    assert.throws(() => SharedContext.init(), /regular file, not a symlink/);
+    assert.throws(() => SharedContext.set('changed', true), /regular file, not a symlink/);
+    assert.equal(fs.readFileSync(outside, 'utf8'), '{"outside":true}');
+    assert.equal(fs.statSync(outside).mode & 0o777, 0o644);
+  } finally {
+    if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
+    else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
+
+test('shared state refuses a symlinked state directory without deleting its target', { skip: process.platform === 'win32' }, (t) => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-state-dirlink-'));
+  const previousRoot = process.env.VERTEX_WORKSPACE_ROOT;
+  const outside = path.join(workspace, 'outside');
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
+  fs.symlinkSync(outside, path.join(workspace, '.vertex'), 'dir');
+
+  try {
+    process.env.VERTEX_WORKSPACE_ROOT = workspace;
+    assert.throws(() => SharedContext.init(), /state directory must be a real directory/);
+    assert.equal(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8'), 'keep');
+  } finally {
+    if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
+    else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
+    fs.rmSync(workspace, { recursive: true, force: true });
+  }
+});
