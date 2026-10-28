@@ -1,5 +1,19 @@
 # VERTEX
 
+<!-- VERTEX INTERACTIVE OVERVIEW -->
+<div align="center">
+
+<a href="https://github.com/vimalspaceton618-afk/vertex"><img src="https://img.shields.io/badge/Explore-VERTEX-7C3AED?style=for-the-badge&logo=github&logoColor=white" alt="Explore VERTEX"></a>
+<a href="#quick-demo"><img src="https://img.shields.io/badge/Try-the%20demo-06B6D4?style=for-the-badge&logo=windowsterminal&logoColor=white" alt="Try the demo"></a>
+<a href="https://github.com/vimalspaceton618-afk/vertex/issues"><img src="https://img.shields.io/badge/Ideas%20%26%20bugs-Open%20an%20issue-111827?style=for-the-badge&logo=github" alt="Ideas and bugs"></a>
+
+**Think. Delegate. Inspect. Build.**
+
+[Quick start](#quick-start) · [Try the command explorer](#command-explorer) · [Architecture](#architecture) · [Contribute](#contributing)
+
+</div>
+
+
 [![CI](https://github.com/vimalspaceton618-afk/vertex/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vimalspaceton618-afk/vertex/actions/workflows/ci.yml)
 ![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)
 ![License: Proprietary](https://img.shields.io/badge/license-proprietary-red)
@@ -25,6 +39,89 @@ VERTEX brings an interactive terminal UI, task orchestration across specialized 
 - [Contributing](#contributing)
 - [Security reports](#security-reports)
 - [License](#license)
+
+## Quick demo
+
+Want to see the workflow before installing? Here is a copy-ready example of the kind of interaction to try after launching VERTEX.
+
+<details>
+<summary><strong>▶ Demo 1 — Inspect a codebase</strong></summary>
+
+Start VERTEX in a repository you own, then enter:
+
+```text
+/audit .
+```
+
+Review the returned findings, verify them yourself, and decide which changes to make. The output depends on your configured model, tools, and repository.
+
+</details>
+
+<details>
+<summary><strong>▶ Demo 2 — Research a technical question</strong></summary>
+
+```text
+/search Node.js security advisories
+/summarize-url https://example.com
+```
+
+Use the research results as a starting point and confirm important claims against primary sources.
+
+</details>
+
+<details>
+<summary><strong>▶ Demo 3 — Run a sandbox command</strong></summary>
+
+```text
+/sandbox uname -a
+```
+
+Requires a working Docker daemon and the required image. Docker isolation is a defense-in-depth measure, not a guarantee that all workloads are safe.
+
+</details>
+
+## Command explorer
+
+Use this quick reference to jump to the task you want to try. These are Markdown links, so they work directly on GitHub without JavaScript or external scripts.
+
+| I want to… | Try this | Details |
+| --- | --- | --- |
+| Check my environment | `vertex doctor` | [First run](#first-run) |
+| Start the interactive UI | `vertex` | [Install](#install) |
+| Audit a repository | `/audit .` | [Common workflows](#common-workflows) |
+| Run a command in Docker | `/sandbox uname -a` | [Security notes](#security-and-limitations) |
+| Search the web | `/search <query>` | [Commands](#commands) |
+| Summarize a URL | `/summarize-url <url>` | [Commands](#commands) |
+| View available commands | `/help` | [Commands](#commands) |
+| Run regression tests | `npm test` | [Development](#development-and-tests) |
+
+<details>
+<summary><strong>Show all installation commands</strong></summary>
+
+```bash
+git clone https://github.com/vimalspaceton618-afk/vertex.git
+cd vertex
+npm ci
+npm run build
+npm link
+vertex doctor
+vertex
+```
+
+Requires Node.js 22+, npm, and Git. Docker is required for Docker-backed sandbox workflows.
+
+</details>
+
+<details>
+<summary><strong>Show the configuration checklist</strong></summary>
+
+- [ ] Run `vertex init` in the intended workspace.
+- [ ] Add the required provider settings to the local `.env`.
+- [ ] Keep API keys private; never commit `.env`.
+- [ ] Run `vertex doctor` to inspect the environment.
+- [ ] Review workspace access and tool approvals before using agents.
+
+</details>
 
 ## What VERTEX does
 
