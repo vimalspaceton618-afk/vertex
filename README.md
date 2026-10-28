@@ -1,265 +1,245 @@
 # VERTEX
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
-[![npm version](https://img.shields.io/npm/v/vertex-cli)]()
-[![License](https://img.shields.io/badge/license-UNLICENSED-red)]()
+[![CI](https://github.com/vimalspaceton618-afk/vertex/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vimalspaceton618-afk/vertex/actions/workflows/ci.yml)
+![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white)
+![License: Proprietary](https://img.shields.io/badge/license-proprietary-red)
 
-A terminal-native, agentic cybersecurity assistant for code, system auditing, and threat response.
+**A terminal-native AI agent workspace for software engineering, research, and authorized security analysis.**
 
-VERTEX runs in your terminal and coordinates specialized subagents to perform tasks such as code audits, sandboxed execution of untrusted scripts, network reconnaissance, and automated browser-based research.
+VERTEX brings an interactive terminal UI, task orchestration across specialized agents, browser-based research, workspace configuration, and optional Docker-backed command execution into one developer workflow.
 
-Why VERTEX?
-- Fast, TTY-native UI for quick workflows in a developer terminal.
-- Hardened Docker-based sandbox for safe execution of untrusted commands and malware research.
-- Multi-agent orchestration for security-specific tasks (audit, recon, monitoring, payload testing).
+> **Project status:** VERTEX is under active development. Features, commands, and policy controls can change. Review proposed actions, use a disposable workspace for experiments, and do not treat VERTEX or its Docker sandbox as a complete security boundary.
 
-Table of Contents
-- Installation
-- Quickstart
-- Examples
-- Core Capabilities
-- Agent Architecture
-- Security & Sandbox Isolation
-- Configuration Reference
-- Slash Commands
-- Contributing
-- License
-- Troubleshooting & FAQ
-- Roadmap
+## Contents
 
----
+- [What VERTEX does](#what-vertex-does)
+- [Requirements](#requirements)
+- [Install](#install)
+- [First run](#first-run)
+- [Common workflows](#common-workflows)
+- [Commands](#commands)
+- [Configuration](#configuration)
+- [Architecture](#architecture)
+- [Security and limitations](#security-and-limitations)
+- [Development and tests](#development-and-tests)
+- [Contributing](#contributing)
+- [Security reports](#security-reports)
+- [License](#license)
 
-## Installation
+## What VERTEX does
 
-### Prerequisites
-- Node.js: v22.x or higher. Use nvm to manage versions: `nvm install 22 && nvm use 22`
-- Git
-- Docker (Optional but strongly recommended for sandboxed execution)
+- **Interactive terminal UI** — work with agents from a keyboard-driven terminal interface.
+- **Agent orchestration** — route coding, research, and security tasks to specialized agents.
+- **Developer workflows** — request code analysis, fixes, refactors, and repository-focused assistance.
+- **Authorized security analysis** — organize audits and defensive workflows for systems you own or have permission to assess.
+- **Browser research** — search the web, inspect URLs, summarize pages, and save screenshots.
+- **Docker-backed command execution** — run supported commands in short-lived containers with network access disabled and resource limits applied.
+- **Workspace-aware setup** — initialize local configuration and inspect the environment with diagnostic commands.
+- **Extensible tools and skills** — use available integrations and local Markdown skills, subject to the project's implementation and policy controls.
 
-> Note: Docker is optional for basic CLI features but required for safe sandboxed runs. Ensure Docker daemon is running before using `/sandbox` functionality.
+## Requirements
 
-### One-command global install from GitHub
+- **Node.js 22 or newer**
+- **npm** (included with Node.js)
+- **Git**
+- **Docker Engine/Desktop** for Docker-backed sandbox commands
 
-After the CLI packaging changes are merged into `main`, install VERTEX globally without cloning the repository yourself:
+Docker is optional for the basic CLI and terminal UI. Docker-backed execution requires a working Docker daemon and the required image to be available locally.
 
-```bash
-npm install -g git+https://github.com/vimalspaceton618-afk/vertex.git#main
-vertex --version
-vertex
-```
+## Install
 
-### Install a global `vertex` command (macOS / Linux)
+### From source
+
+**macOS / Linux / Windows PowerShell**
 
 ```bash
 git clone https://github.com/vimalspaceton618-afk/vertex.git
 cd vertex
 npm ci
+npm run build
 npm link
 vertex --version
 vertex
 ```
 
-### Install a global `vertex` command (Windows - PowerShell)
+`npm link` registers the package's `vertex` executable globally for the current Node/npm installation. Keep the cloned repository in place while using the link.
 
-```powershell
-git clone https://github.com/vimalspaceton618-afk/vertex.git
-cd vertex
-npm ci
-npm link
+If the command is not found, check `npm config get prefix`, ensure the npm global executable directory is on your `PATH`, and reopen the terminal. On Windows, the npm global prefix directory must be available on your user `PATH`.
+
+### Install directly from GitHub
+
+To install the current `main` branch as a global command without manually cloning it:
+
+```bash
+npm install --global git+https://github.com/vimalspaceton618-afk/vertex.git#main
 vertex --version
 vertex
 ```
 
-The package exposes the `vertex` executable through npm's `bin` mapping. `npm ci` builds the CLI automatically, and `npm link` registers a global command that launches the interactive terminal UI from any directory. Keep the cloned repository in place while using this link.
+This installs the version on `main`, which may change as development continues. It is not a version-pinned release.
 
-If PowerShell says `vertex` is not recognized, check the npm global prefix with `npm config get prefix`, ensure that directory is on your user `PATH`, then close and reopen the terminal. On macOS/Linux, check that the global npm prefix's `bin` directory is on `PATH` (for example, `$(npm config get prefix)/bin` for a standalone prefix).
+## First run
 
----
+From the workspace where you intend to use VERTEX:
 
-## Quickstart
+1. Create a starter configuration file:
 
-1. From the project/workspace directory where you want VERTEX to work, create a local configuration template:
-```bash
-vertex init
+   ```bash
+   vertex init
+   ```
+
+   This creates `.env` only if it does not already exist. Credential fields are empty, and the file is created with restrictive permissions where supported.
+
+2. Edit `.env` and configure your provider or local model endpoint. Never commit credentials or paste API keys into issues, logs, or chat.
+
+3. Run the environment diagnostics:
+
+   ```bash
+   vertex doctor
+   ```
+
+   For machine-readable diagnostics, use `vertex doctor --json`.
+
+4. Start the interactive UI:
+
+   ```bash
+   vertex
+   ```
+
+On first launch, VERTEX asks you to explicitly trust the current workspace. Grant access only to a directory you intend the agent to read or modify.
+
+## Common workflows
+
+### Inspect a repository
+
+In the VERTEX prompt:
+
+```text
+/audit .
 ```
-This creates `.env` only if it does not already exist, uses user-only file permissions on POSIX systems, and leaves API-key fields empty. It never overwrites an existing `.env`.
 
-2. Edit `.env` and set the provider credentials and optional model/endpoint for your environment. **Never commit `.env` or paste API keys into issues, logs, or chat.**
+Use the findings to guide a manual review and remediation. Audit results are suggestions and should be verified before being treated as confirmed vulnerabilities.
 
-3. Check the environment without starting an agent task:
+### Run a command in Docker
+
+```text
+/sandbox uname -a
+```
+
+The standard Docker sandbox is configured with no container network access, a 256 MiB memory limit, a 64-process limit, dropped Linux capabilities, a timeout, and automatic container cleanup. See [Security and limitations](#security-and-limitations).
+
+### Research a URL
+
+```text
+/search Node.js security advisories
+/open https://example.com
+/summarize-url https://example.com/article
+/screenshot-url https://example.com
+```
+
+### Use the CLI without the interactive UI
+
 ```bash
-vertex doctor
-# Machine-readable output:
+vertex --run "Summarize the structure of this repository"
+vertex --run "Summarize the structure of this repository" --json
 vertex doctor --json
 ```
-The doctor checks Node.js, workspace access, configuration-file validity/permissions, provider configuration, Git, and optional Docker availability. It does not print secret values or launch containers/agent tasks.
 
-4. Start VERTEX in that workspace:
+**Caution:** `vertex --run ... --yes` automatically approves tool confirmations in headless mode. Use it only for trusted prompts in a disposable, controlled environment. Do not use it as a shortcut for running untrusted instructions.
+
+## Commands
+
+The interactive prompt supports the following command families. Use `/help` in VERTEX for the current in-app list and usage.
+
+| Command | Purpose |
+| --- | --- |
+| `/help`, `/clear`, `/exit` | Help, clear conversation history, and exit |
+| `/health`, `/doctor`, `/scope` | Inspect runtime status, environment diagnostics, and policy scope |
+| `/init`, `/mode` | Create a local configuration template or inspect/downgrade autonomy mode |
+| `/audit [path]` | Request a security audit of a path |
+| `/sandbox <command>`, `/safe-sandbox <command>` | Run a command using a Docker-backed sandbox workflow |
+| `/search <query>`, `/open <url>` | Search the web or inspect a URL |
+| `/summarize-url <url>`, `/screenshot-url <url>` | Summarize a page or save a screenshot |
+| `/goal <task>`, `/schedule <...>` | Request bounded goal execution or scheduling |
+| `/grill-me`, `/learn` | Clarify requirements or extract learned rules |
+| `/skill <...>`, `/skills` | Use supported science lookups or inspect local Markdown skills |
+| `/nyx`, `/recon`, `/sentinel`, `/phantom` | Route to specialized security workflows; use only with proper authorization |
+| `/loot`, `/attack-graph`, `/gpu` | Access supported data-store, graph, or GPU-job workflows |
+
+Command availability and behavior may vary by version. Check `/help` before relying on a command in an automated workflow.
+
+## Configuration
+
+`vertex init` creates a workspace-local `.env` template. VERTEX also maintains global configuration under `~/.vertexcli/config.json`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | Empty | API key for the configured cloud provider |
+| `OPENAI_BASE_URL` | Empty | Optional OpenAI-compatible provider endpoint |
+| `BRAIN_MODE` | `cloud` | Provider mode: `cloud`, `local`, or `offline` |
+| `AI_MODEL` | Runtime default | Optional model identifier |
+| `LOCAL_BASE_URL` | `http://127.0.0.1:11434/v1` | Local OpenAI-compatible endpoint, such as an Ollama endpoint |
+| `LOCAL_MODEL` | Empty | Model identifier for local/offline mode |
+| `WORKSPACE_ROOT` | Empty | Optional workspace-root restriction |
+| `SHELL_TIMEOUT_MS` | `60000` | Subprocess timeout in milliseconds |
+
+The starter `.env` documents only the most common settings. Advanced model routing and other runtime options are defined in the source configuration and may change over time.
+
+## Architecture
+
+VERTEX is implemented in TypeScript on Node.js. The terminal UI uses React and Ink. An agent manager coordinates specialized agents and tools; browser workflows use Puppeteer, while sandboxed command execution uses Docker when configured and available.
+
+At a high level:
+
+1. **CLI and TUI** — accept interactive prompts or supported headless commands.
+2. **Agent orchestration** — route tasks to agents and tools.
+3. **Tool and policy layer** — apply the project's authorization and confirmation rules.
+4. **Integrations** — connect supported browser, filesystem, development, and research capabilities.
+5. **Execution and state** — use workspace configuration and optional Docker-backed execution.
+
+This describes the intended component boundaries, not a formal security guarantee. Review the implementation and current limitations before using VERTEX in a sensitive environment.
+
+## Security and limitations
+
+VERTEX can read or modify files in a trusted workspace and may invoke tools or subprocesses. Run it with the least privilege practical for your task.
+
+- Use VERTEX only on systems and targets you own or are explicitly authorized to assess.
+- Do not point it at production infrastructure, sensitive repositories, or directories containing credentials unless your threat model and access controls permit it.
+- Keep API keys in private configuration; never commit `.env` or secrets.
+- Review generated commands, code changes, research findings, and agent output before acting on them.
+- Prefer a disposable workspace and a separate VM for experiments involving untrusted code.
+- Docker isolation reduces exposure but does not guarantee that a workload is safe. Keep the host and Docker installation updated.
+- Treat local skills, prompts, scraped pages, and retrieved content as untrusted input.
+
+**Important:** the headless `--yes` flag bypasses interactive tool confirmations. Do not combine it with untrusted prompts or sensitive workspaces. VERTEX is actively evolving; do not assume every tool has identical enforcement semantics or that the project has undergone an independent penetration test.
+
+For details on reporting vulnerabilities, see [SECURITY.md](SECURITY.md).
+
+## Development and tests
+
+Install dependencies, compile the TypeScript source, and run the regression suite:
+
 ```bash
-vertex
+npm ci
+npm run build
+npm test
 ```
 
-Example session (interactive):
-- Prompt: "Audit this repo for exposed secrets"
-- VERTEX will run `env_secrets_scan`, present findings, and suggest remediation steps.
-
-CLI quick demo:
-```text
-$ vertex
-VERTEX > /audit .
-[CyberAgent] Running secrets scan...
-[CyberAgent] Found 1 potential secret in config/.env.example: REDACTED_KEY
-[DeveloperAgent] Suggestion: rotate key, add to .gitignore, add pattern to secret rules
-```
-
----
-
-## Examples
-
-- Run command in sandbox:
-```bash
-/sandbox python3 test_payload.py
-# Runs inside ephemeral Alpine container with no network and strict limits
-```
-
-- Run full audit (secrets, network cursory scan, file integrity)
-```bash
-/audit ./src
-```
-
-- Screenshot and summarize a URL:
-```bash
-/screenshot-url https://example.com
-/summarize-url https://example.com/blog-post
-```
-
-Add more concrete examples for common workflows (copy/paste inputs and sample outputs) so new users can learn quickly.
-
----
-
-## Core Capabilities
-
-- Agentic Multi-Agent System: CyberAgent, DeveloperAgent, ReconAgent, SentinelAgent, PhantomAgent, BrowserAgent
-- Hardened Docker Sandbox: ephemeral Alpine containers, no network, memory/process caps
-- Integrated security audits: secrets scanning (`env_secrets_scan`), process inspection (`process_inspect`), file integrity manifests (`file_integrity`)
-- Puppeteer-driven BrowserAgent: webpage scraping, screenshots, summarization
-- Extensible plugin framework: connectors for GitHub, Slack, and user-defined tool suites
-
----
-
-## Agent Architecture
-
-| Agent | Role |
-|---|---|
-| CyberAgent | Security orchestrator — audits & threat analysis |
-| DeveloperAgent | Code edits, refactoring, fixes |
-| ReconAgent | Network footprinting, OSINT |
-| SentinelAgent | Monitoring, integrity verification |
-| PhantomAgent | Covert payload testing & research |
-| BrowserAgent | Automated web tasks & scraping |
-
----
-
-## Security & Sandbox Isolation
-
-VERTEX is designed with safety-first defaults, but running analysis tools and untrusted code always carries risk. Follow these rules:
-- Use Docker sandboxes for untrusted code — do not run unknown scripts directly on your host.
-- Rotate and never commit API keys or secrets to git.
-- Limit workspace access and run in constrained accounts or VMs when testing malware.
-
-Sandbox constraints:
-- Memory capped at 256 MB
-- Process limit capped at 64 PIDs
-- All Linux capabilities dropped (CapDrop: ALL)
-- No network access inside sandbox containers
-- Containers destroyed automatically after execution
-
-Responsible disclosure:
-- If you discover a security vulnerability in VERTEX, please use GitHub's private security advisories or open an issue labeled `security`. Add a SECURITY.md to the repo with your preferred contact method.
-
----
-
-## Configuration Reference
-
-| Variable | Default | Description |
-|---|---:|---|
-| OPENAI_API_KEY | empty | API key for a cloud LLM provider; keep it private |
-| OPENAI_BASE_URL | empty | Optional OpenAI-compatible cloud provider endpoint |
-| AI_MODEL | runtime default | Optional model identifier |
-| BRAIN_MODE | cloud | Provider mode: `cloud`, `local`, or `offline` |
-| LOCAL_BASE_URL | `http://127.0.0.1:11434/v1` in global config | Local OpenAI-compatible endpoint |
-| LOCAL_MODEL | empty | Model identifier for local/offline mode |
-| WORKSPACE_ROOT | empty | Optional workspace restriction; blank uses the current workspace |
-| SHELL_TIMEOUT_MS | 60000 | Subprocess execution timeout in ms |
-
-Run `vertex init` to create a private, workspace-local `.env` template. It intentionally leaves credential fields empty and never overwrites an existing file. Do not commit `.env`; the checked-in ignore rules exclude it.
-
----
-
-## Slash Commands
-
-Use the interactive slash command interface:
-
-- `/sandbox <cmd>` — Run command inside an isolated Docker container
-- `/audit [path]` — Run full audit (secrets + network + integrity + processes)
-- `/search <query>` — Web research using BrowserAgent
-- `/open <url>` — Inspect a URL (title/metadata)
-- `/summarize-url <url>` — Extract & summarize page content
-- `/screenshot-url <url>` — Capture a full-page screenshot
-- `/mode` — Show the current autonomy mode
-- `/mode safe` — Downgrade the current process to `semi_auto` (cannot enable full-auto mode)
-- `/skills` — List local Markdown skills in `.vertex/skills/`
-- `/skills show <name>` — Inspect a local skill as untrusted text (never executed)
-- `/health` — Inspect runtime status
-- `/doctor` — Check environment/configuration safely
-- `/init` — Create a private local `.env` template without overwriting an existing file
-- `/help` — Display command menu
-- `/exit` — Terminate session
-
----
-
-### Local skill security
-
-Local skills are optional Markdown reference files stored in `.vertex/skills/<name>.md`.
-Use conservative lowercase names (letters, digits, hyphens, underscores); each file is limited to 64 KiB.
-VERTEX ignores symlinked skill files/directories and rejects traversal attempts. Skill content is treated as untrusted data: viewing a skill does not execute code, grant tools, or change policy. Do not store API keys, passwords, or other secrets in skill files.
+The test script builds the project and runs the Node.js test suites, including UI regression tests. CI also exercises build/test and packaging workflows across supported runner environments. A passing test suite is useful evidence, but it is not proof that every security property holds.
 
 ## Contributing
 
-Contributions welcome! Please:
-1. Read CONTRIBUTING.md and CODE_OF_CONDUCT.md
-2. Open issues for bugs or feature requests
-3. Create PRs against `main` with a clear description and tests where applicable
+Bug reports, documentation fixes, feature requests, and code contributions are welcome. Before opening a pull request:
 
-Add templates: ISSUE_TEMPLATE.md and PULL_REQUEST_TEMPLATE.md to make contributions consistent.
+1. Read [CONTRIBUTING.md](CONTRIBUTING.md).
+2. Keep the change focused and explain its motivation.
+3. Add or update tests for behavior changes.
+4. Run `npm test` and report any limitations in the PR description.
 
----
+## Security reports
+
+Please follow [SECURITY.md](SECURITY.md). Prefer GitHub's private vulnerability reporting or security-advisory workflow when available. Avoid publishing exploitable details in a public issue before maintainers can assess them.
 
 ## License
 
-This project is currently UNLICENSED. If you intend to allow reuse, add an appropriate license (MIT, Apache-2.0, or similar). Update the badge and LICENSE file accordingly.
-
----
-
-## Troubleshooting & FAQ
-
-Q: I see "sandbox: permission denied" when running Docker
-A: Ensure your user is in the `docker` group or use `sudo` for Docker commands.
-
-Q: LLM calls time out
-A: Check API key, provider URL, and that your quota/plan supports the requested model.
-
-Add a short list of common errors and fixes.
-
----
-
-## Roadmap & Changelog
-- Roadmap: list planned features such as enhanced plugin marketplace, RBAC for multi-user installs, offline model support.
-- Keep a CHANGELOG.md tracking releases, fixes, and breaking changes.
-
----
-
-## Maintainers / Contact
-- Maintainer: SpaceTon
-- Repo: https://github.com/vimalspaceton618-afk/vertex
-- Security contact: use GitHub private security advisories or open a private issue labeled "security"
+VERTEX is proprietary software. The repository's [LICENSE](LICENSE) describes the permitted evaluation/contribution use and restrictions. No open-source license is granted; redistribution or other use beyond the stated permissions requires written permission from the rights holder.
