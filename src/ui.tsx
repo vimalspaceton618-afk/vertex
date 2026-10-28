@@ -10,7 +10,7 @@ import { initializeWorkspaceConfig } from './core/setup.js';
 import { describeScope } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
-import { VertexHeader, AgentStatusMonitor, PermissionPrompt, TaskResultSummary, getTerminalLayoutWidth, type TaskLifecycleStatus } from './components.js';
+import { VertexHeader, VertexSidebar, AgentStatusMonitor, PermissionPrompt, TaskResultSummary, getTerminalLayoutWidth, type TaskLifecycleStatus } from './components.js';
 import { listWorkspaceSkills, readWorkspaceSkill } from './core/skills/SkillLoader.js';
 import { forceSafeMode, getAutonomyMode } from './core/policy/ModeControl.js';
 
@@ -182,6 +182,8 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   const { exit } = useApp();
   const { stdout } = useStdout();
   const layoutWidth = getTerminalLayoutWidth(stdout.columns);
+  const showSidebars = layoutWidth >= 108;
+  const centerWidth = showSidebars ? layoutWidth - 40 : layoutWidth;
   const [isTrusted, setIsTrusted] = useState(false);
   const [trustCursor, setTrustCursor] = useState(1);
   const [input, setInput] = useState('');
@@ -1113,10 +1115,12 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   }
 
   return (
-    <Box flexDirection="column" width={layoutWidth}>
-      <VertexHeader />
+    <Box flexDirection="row" width={layoutWidth}>
+      {showSidebars && <VertexSidebar side="left" width={18} isStreaming={isStreaming} taskLabel={taskLabel} />}
+      <Box flexDirection="column" width={centerWidth}>
+      <VertexHeader width={centerWidth} />
       {history.length === 0 && !isStreaming && (
-        <Box flexDirection="column" width={layoutWidth} borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1} marginY={1}>
+        <Box flexDirection="column" width={centerWidth} borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1} marginY={1}>
           <Text color="cyan" bold>Welcome to VERTEX</Text>
           <Text color="white">Your model-agnostic coding and security workspace.</Text>
           <Box marginTop={1} flexDirection="column">
@@ -1188,9 +1192,11 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
           isStreaming={isStreaming} 
           selectedSuggestionIndex={selectedSuggestionIndex} 
           queuedQueries={queuedQueries}
-          width={layoutWidth}
+          width={centerWidth}
         />
       )}
+      </Box>
+      {showSidebars && <VertexSidebar side="right" width={22} isStreaming={isStreaming} taskLabel={taskLabel} />}
     </Box>
   );
 };
