@@ -35,19 +35,36 @@ const DEFAULTS: BlackboardOptions = {
 
 type Listener = (message: BlackboardMessage) => void;
 
+function assertJsonValue(value: unknown, seen: WeakSet<object>): void {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return;
+    if (typeof value === "number" && Number.isFinite(value)) return;
+    if (typeof value !== "object") {
+        throw new TypeError("Blackboard payload must contain only JSON values");
+    }
+    if (seen.has(value)) throw new TypeError("Blackboard payload must not contain circular references");
+    const prototype = Object.getPrototypeOf(value);
+    if (!Array.isArray(value) && prototype !== Object.prototype && prototype !== null) {
+        throw new TypeError("Blackboard payload must contain only plain JSON objects and arrays");
+    }
+    if (Object.getOwnPropertySymbols(value).length > 0) {
+        throw new TypeError("Blackboard payload must not contain symbol properties");
+    }
+    seen.add(value);
+    for (const descriptor of Object.values(Object.getOwnPropertyDescriptors(value))) {
+        if (!("value" in descriptor) || descriptor.value === undefined) {
+            throw new TypeError("Blackboard payload must not contain accessors or undefined values");
+        }
+        assertJsonValue(descriptor.value, seen);
+    }
+    seen.delete(value);
+}
+
 function cloneJsonPayload<T>(payload: T, maxBytes: number): T {
     if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
         throw new TypeError("Blackboard payload must be a JSON object");
     }
-    let serialized: string | undefined;
-    try {
-        serialized = JSON.stringify(payload);
-    } catch {
-        throw new TypeError("Blackboard payload must contain only serializable JSON data");
-    }
-    if (typeof serialized !== "string") {
-        throw new TypeError("Blackboard payload must contain only serializable JSON data");
-    }
+    assertJsonValue(payload, new WeakSet<object>());
+    const serialized = JSON.stringify(payload);
     if (Buffer.byteLength(serialized, "utf8") > maxBytes) {
         throw new Error("Blackboard payload exceeds configured byte limit");
     }
