@@ -41,12 +41,12 @@
     "log-update": "^8.0.0",
     "openai": "^6.34.0",
     "puppeteer": "^25.15.0",
-    "react": "^19.2.5"
+    "react": "^19.3.1"
   },
   "devDependencies": {
     "@types/dockerode": "^4.0.1",
     "@types/node": "^25.5.2",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.3.0",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.2"
   },
