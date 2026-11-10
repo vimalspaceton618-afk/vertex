@@ -72,3 +72,12 @@ test("ResilientModelRouter validates route and budget configuration", () => {
         maxOutputTokens: -1
     }));
 });
+
+test("ResilientModelRouter rejects oversized prompts before network access", async () => {
+    const router = new ResilientModelRouter({
+        primary: { name: "primary", baseURL: "https://example.test/v1", apiKey: "test", model: "test" },
+        maxContextChars: 4
+    });
+    await assert.rejects(() => router.infer("12345"), /prompt exceeds configured maxContextChars/);
+    await assert.rejects(() => router.infer("   "), /prompt must not be empty/);
+});
