@@ -10,88 +10,111 @@ export function getTerminalLayoutWidth(columns: number | undefined): number {
 
 const RobotLogo = () => (
   <Box flexDirection="column" alignItems="center" marginY={1}>
-    <Text color="cyan"> ▄▄▄▄▄▄▄▄ </Text>
-    <Text color="cyan">██▀████▀██</Text>
-    <Text color="cyan">██████████</Text>
-    <Text color="cyan"> █  ██  █ </Text>
+    <Text color="cyan" bold>██╗   ██╗</Text>
+    <Text color="blue" bold>╚██╗ ██╔╝</Text>
+    <Text color="magenta" bold> ╚████╔╝ </Text>
+    <Text color="cyan" bold>  ╚══╝   </Text>
   </Box>
 );
 
-export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> = ({
+export const VertexHeader: React.FC<{ version?: string; activeAgent?: string; width?: number }> = ({
   version = APP_VERSION_LABEL,
-  activeAgent = 'VERTEX'
+  activeAgent = 'VERTEX',
+  width
 }) => {
   const { stdout } = useStdout();
-  const terminalWidth = getTerminalLayoutWidth(stdout.columns);
-  const innerWidth = terminalWidth - 2;
+  const terminalWidth = Math.max(40, Math.min(120, width ?? getTerminalLayoutWidth(stdout.columns)));
   const compact = terminalWidth < 72;
-  const panelWidth = Math.max(18, Math.floor(innerWidth / 2) - 1);
-  const repeatCount = Math.max(0, innerWidth - activeAgent.length - version.length - 5);
   const activeModel = process.env.AI_MODEL || 'provider not configured';
   const currentCwd = process.cwd();
-  const cwdDisplay = currentCwd.length > panelWidth - 4 ? `…${currentCwd.slice(-(panelWidth - 5))}` : currentCwd;
+  const cwdDisplay = currentCwd.length > terminalWidth - 12 ? `…${currentCwd.slice(-(terminalWidth - 13))}` : currentCwd;
+  const title = `${activeAgent} · ${version}`;
+  const rule = '─'.repeat(Math.max(0, terminalWidth - title.length - 6));
 
   return (
     <Box flexDirection="column" width={terminalWidth}>
-      {/* Top Border with Title */}
       <Box flexDirection="row" flexWrap="nowrap">
-        <Text color="cyan">╭─ </Text>
-        <Text color="cyan" bold>{activeAgent} {version} </Text>
-        <Text color="cyan">{"─".repeat(repeatCount)}╮</Text>
+        <Text color="cyan" bold>╭─ {title} </Text>
+        <Text color="blue">{rule}╮</Text>
       </Box>
-
-      {/* Main Content Area */}
       {compact ? (
         <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} width={terminalWidth}>
-          <Text bold>Welcome to VERTEX</Text>
+          <Text color="white" bold>Welcome to VERTEX</Text>
           <Text color="gray">{activeModel}</Text>
           <Text color="gray">{cwdDisplay}</Text>
-          <Text color="cyan">Try /help · ? for shortcuts</Text>
+          <Text color="cyan">Use /help · ? for shortcuts</Text>
         </Box>
       ) : (
-      <Box flexDirection="row">
-        {/* Left Border */}
-        <Box flexDirection="column" width={1}>
-          <Text color="cyan">{'│\n│\n│\n│\n│\n│\n│\n│\n│'}</Text>
-        </Box>
-
-        {/* Left Pane (Welcome & Details) */}
-        <Box width={panelWidth} flexDirection="column" alignItems="center" paddingX={1}>
-          <Text bold>Welcome back!</Text>
-          <RobotLogo />
-          <Text color="gray">{activeModel}</Text>
-          <Text color="gray">{cwdDisplay}</Text>
-        </Box>
-
-        {/* Center Divider */}
-        <Box flexDirection="column" width={1}>
-          <Text color="cyan">{'│\n│\n│\n│\n├\n│\n│\n│\n│'}</Text>
-        </Box>
-
-        {/* Right Pane (Tips & Activity) */}
-        <Box width={panelWidth} flexDirection="column" paddingX={1}>
-          <Text color="cyan" bold>Tips for getting started</Text>
-          <Text>Use / or type /help to discover commands.</Text>
-          <Text>Workspace: current directory</Text>
-          
-          <Box flexDirection="row" marginTop={1}>
-            <Text color="cyan">{"─".repeat(Math.max(8, panelWidth - 4))}</Text>
+        <Box flexDirection="column" borderStyle="round" borderColor="blue" paddingX={2} paddingY={1} width={terminalWidth}>
+          <Box flexDirection="row" justifyContent="space-between">
+            <Box flexDirection="column">
+              <Text color="cyan" bold>██╗   ██╗███████╗██████╗ ████████╗███████╗██╗  ██╗</Text>
+              <Text color="blue" bold>╚██╗ ██╔╝██╔════╝██╔══██╗╚══██╔══╝╚══███╔╝╚██╗██╔╝</Text>
+              <Text color="magenta" bold> ╚████╔╝ █████╗  ██████╔╝   ██║     ███╔╝  ╚███╔╝</Text>
+              <Text color="cyan" bold>  ╚██╔╝  ██╔══╝  ██╔══██╗   ██║    ███╔╝   ██╔██╗</Text>
+              <Text color="blue" bold>   ██║   ███████╗██║  ██║   ██║   ███████╗██╔╝ ██╗</Text>
+              <Text color="gray">AUTONOMOUS · SECURE · EXTENSIBLE</Text>
+            </Box>
+            <Box flexDirection="column" alignItems="flex-end">
+              <Text color="green" bold>● SESSION READY</Text>
+              <Text color="gray">{version}</Text>
+              <Text color="gray">{cwdDisplay}</Text>
+              <Text color="cyan">{activeModel}</Text>
+            </Box>
           </Box>
-          
-          <Text color="cyan" bold>Recent activity</Text>
-          <Text color="gray">Activity appears as tasks run.</Text>
+          <Box marginTop={1} borderStyle="round" borderColor="cyan" paddingX={1} flexDirection="column">
+            <Text color="yellow" bold>Welcome to VERTEX</Text>
+            <Text color="white">Your autonomous AI engineering partner for coding, research and automation.</Text>
+            <Text color="gray">Type /help to discover commands · Esc cancels a running task</Text>
+          </Box>
         </Box>
-
-        {/* Right Border */}
-        <Box flexDirection="column" width={1}>
-          <Text color="cyan">{'│\n│\n│\n│\n┤\n│\n│\n│\n│'}</Text>
-        </Box>
-      </Box>
       )}
-      {!compact && (
-        <Box flexDirection="row">
-          <Text color="cyan">╰{"─".repeat(panelWidth)}┴{"─".repeat(panelWidth)}╯</Text>
-        </Box>
+    </Box>
+  );
+};
+
+export const VertexSidebar: React.FC<{ side: 'left' | 'right'; width: number; isStreaming: boolean; taskLabel: string }> = ({ side, width, isStreaming, taskLabel }) => {
+  const narrow = width < 17;
+  const panelWidth = Math.max(12, width);
+  const activeModel = process.env.AI_MODEL || 'auto';
+  const cwd = process.cwd();
+  const cwdLabel = cwd.length > panelWidth - 5 ? `…${cwd.slice(-(panelWidth - 6))}` : cwd;
+  const items = side === 'left'
+    ? [['◆', 'Chat'], ['◇', 'Agents'], ['⌘', 'Tools'], ['▣', 'Workspace'], ['◈', 'MCP'], ['⊕', 'Plugins'], ['▤', 'Tasks'], ['⬡', 'Memory'], ['⚙', 'Settings']]
+    : [['●', 'Filesystem'], ['●', 'Shell'], ['●', 'Git'], ['●', 'Browser'], ['●', 'Docker'], ['●', 'Search'], ['●', 'Web'], ['●', 'PDF / OCR']];
+
+  return (
+    <Box flexDirection="column" width={panelWidth} borderStyle="round" borderColor="blue" paddingX={1}>
+      <Text color="cyan" bold>{side === 'left' ? 'VERTEX' : 'LIVE STATUS'}</Text>
+      <Text color="gray">{'─'.repeat(Math.max(4, panelWidth - 4))}</Text>
+      {side === 'left' ? (
+        <>
+          {items.map(([icon, label], index) => (
+            <Text key={label} color={index === 0 ? 'cyan' : 'white'} bold={index === 0}>{icon} {label}</Text>
+          ))}
+          <Box marginTop={1} flexDirection="column">
+            <Text color="green" bold>● Online</Text>
+            <Text color="gray">Model: {activeModel}</Text>
+            <Text color="gray">{cwdLabel}</Text>
+          </Box>
+        </>
+      ) : (
+        <>
+          <Text color="cyan" bold>AGENTS</Text>
+          <Text color={isStreaming ? 'yellow' : 'green'}>{isStreaming ? '● Working' : '● Ready'}</Text>
+          <Text color="gray">Code / Research</Text>
+          <Text color="gray">Security / Data</Text>
+          <Text color="cyan" bold>TOOLS</Text>
+          {items.map(([icon, label]) => <Text key={label} color="white">{icon} {label}</Text>)}
+          <Box marginTop={1} flexDirection="column">
+            <Text color="yellow" bold>SYSTEM</Text>
+            <Text color="gray">Git: available</Text>
+            <Text color="gray">Node: {process.version}</Text>
+            <Text color="gray">Activity appears as tasks run.</Text>
+          </Box>
+          {isStreaming && <Box marginTop={1} flexDirection="column"><Text color="yellow" bold>RUNNING TASK</Text><Text color="gray">{taskLabel.slice(0, Math.max(6, panelWidth - 4))}</Text></Box>}
+          {!narrow && <Text color="gray">/help · ? keys</Text>}
+        </>
       )}
     </Box>
   );

@@ -153,7 +153,7 @@ class PluginPolicySetTool extends Tool {
         const next = {
             autonomyMode: current.autonomyMode || 'semi_auto',
             riskDefaults: current.riskDefaults,
-            defaultAllow: current.defaultAllow ?? true,
+            defaultAllow: current.defaultAllow ?? false,
             tools: { ...(current.tools || {}) }
         };
         if (args.autonomyMode) {

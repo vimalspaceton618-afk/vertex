@@ -58,10 +58,13 @@ test('header, welcome panel, trust gate, and prompt use the shared responsive wi
   assert.match(components, /export function getTerminalLayoutWidth\(columns: number \| undefined\)/);
   assert.match(components, /getTerminalLayoutWidth\(stdout\.columns\)/, 'header should use shared layout width');
   assert.match(ui, /const layoutWidth = getTerminalLayoutWidth\(stdout\.columns\)/);
-  assert.match(ui, /<Box flexDirection="column" width=\{layoutWidth\}>\s*<VertexHeader \/>/);
-  assert.match(ui, /<Box flexDirection="column" width=\{layoutWidth\} borderStyle="round" borderColor="cyan"/);
+  assert.match(ui, /<Box flexDirection="column" width=\{centerWidth\}>\s*<VertexHeader width=\{centerWidth\} \/>/);
+  assert.match(ui, /showSidebars = layoutWidth >= 108/);
+  assert.match(ui, /<VertexSidebar side="left"/);
+  assert.match(ui, /<VertexSidebar side="right"/);
+  assert.match(ui, /<Box flexDirection="column" width=\{centerWidth\} borderStyle="round" borderColor="cyan"/);
   assert.match(ui, /<TrustGate trustCursor=\{trustCursor\} width=\{layoutWidth\} \/>/);
-  assert.match(ui, /queuedQueries=\{queuedQueries\}\s*width=\{layoutWidth\}/);
+  assert.match(ui, /queuedQueries=\{queuedQueries\}\s*width=\{centerWidth\}/);
   assert.doesNotMatch(ui, /width=\{97\}|repeat\(97\)|width="100%"/, 'primary layout should not use mismatched hard-coded widths');
 });
 

@@ -23,7 +23,7 @@ const DEFAULT_POLICY: PluginPolicy = {
         mutate: { requireConfirmation: true },
         destructive: { requireConfirmation: true }
     },
-    defaultAllow: true,
+    defaultAllow: false,
     tools: {}
 };
 
@@ -69,7 +69,7 @@ function loadPolicy(): PluginPolicy {
         return {
             autonomyMode: mode,
             riskDefaults,
-            defaultAllow: parsed.defaultAllow ?? true,
+            defaultAllow: parsed.defaultAllow ?? false,
             tools: parsed.tools || {}
         };
     } catch {
@@ -87,7 +87,7 @@ export function savePolicy(policy: PluginPolicy): void {
     const normalized: PluginPolicy = {
         autonomyMode: policy.autonomyMode || 'semi_auto',
         riskDefaults: policy.riskDefaults || DEFAULT_POLICY.riskDefaults,
-        defaultAllow: policy.defaultAllow ?? true,
+        defaultAllow: policy.defaultAllow ?? false,
         tools: policy.tools || {}
     };
     fs.writeFileSync(policyPath, JSON.stringify(normalized, null, 2), 'utf-8');
@@ -99,7 +99,7 @@ export function checkToolPolicy(
 ): { allowed: boolean; requireConfirmation: boolean; autonomyMode: string } {
     const policy = loadPolicy();
     const perTool = policy.tools?.[toolName];
-    const allowed = perTool?.allowed ?? (policy.defaultAllow ?? true);
+    const allowed = perTool?.allowed ?? (policy.defaultAllow ?? false);
     const defaultRisk = policy.riskDefaults?.[riskLevel]?.requireConfirmation ?? (riskLevel !== 'read');
     const requireConfirmation = perTool?.requireConfirmation ?? defaultRisk;
     return { allowed, requireConfirmation, autonomyMode: policy.autonomyMode || 'semi_auto' };

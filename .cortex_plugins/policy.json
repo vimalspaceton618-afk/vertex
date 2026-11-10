@@ -1,5 +1,5 @@
 {
-  "defaultAllow": true,
+  "defaultAllow": false,
   "tools": {
     "plugin_github_issues": {
       "allowed": true,

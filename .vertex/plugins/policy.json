@@ -11,6 +11,6 @@
       "requireConfirmation": true
     }
   },
-  "defaultAllow": true,
+  "defaultAllow": false,
   "tools": {}
 }

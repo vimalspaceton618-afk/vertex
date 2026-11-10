@@ -9,6 +9,7 @@ import { EventEmitter } from 'node:events';
 
 import { validateRemoteTarget, AutoExecutorTool } from '../dist/tools/AutoExecutor.js';
 import { evaluateToolPolicy } from '../dist/core/policy/PolicyEngine.js';
+import { checkToolPolicy } from '../dist/plugins/policy.js';
 import { resolveInsideWorkspace } from '../dist/tools/PathSecurity.js';
 import { isAllowedDaemonOrigin, validateDaemonPayload, MAX_DAEMON_PROMPT_CHARS, daemonServer, createDaemonAbortController, stopDaemon } from '../dist/core/daemon.js';
 import { awaitWithAbort, iterateWithAbort, waitForRetryDelay } from '../dist/core/agent/BaseAgent.js';
@@ -650,5 +651,37 @@ test('HTTP probe aborts a pending local HTTP request promptly', async () => {
     if (timer) clearTimeout(timer);
     controller.abort();
     await new Promise((resolve) => server.close(() => resolve()));
+  }
+});
+
+
+test('plugin policy denies unknown tools by default but honors explicit per-tool allow rules', () => {
+  const previousRoot = process.env.VERTEX_WORKSPACE_ROOT;
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'vertex-plugin-policy-test-'));
+  try {
+    process.env.VERTEX_WORKSPACE_ROOT = workspace;
+    const policyDir = path.join(workspace, '.vertex_plugins');
+    fs.mkdirSync(policyDir, { recursive: true });
+    fs.writeFileSync(path.join(policyDir, 'policy.json'), JSON.stringify({
+      autonomyMode: 'semi_auto',
+      riskDefaults: {
+        read: { requireConfirmation: false },
+        mutate: { requireConfirmation: true },
+        destructive: { requireConfirmation: true }
+      },
+      tools: {
+        plugin_explicitly_allowed: { allowed: true },
+        plugin_explicitly_denied: { allowed: false }
+      }
+    }));
+
+    assert.equal(checkToolPolicy('plugin_unknown_tool', 'read').allowed, false);
+    assert.equal(checkToolPolicy('plugin_explicitly_allowed', 'read').allowed, true);
+    assert.equal(checkToolPolicy('plugin_explicitly_denied', 'read').allowed, false);
+    assert.equal(checkToolPolicy('plugin_unknown_tool', 'mutate').requireConfirmation, true);
+  } finally {
+    if (previousRoot === undefined) delete process.env.VERTEX_WORKSPACE_ROOT;
+    else process.env.VERTEX_WORKSPACE_ROOT = previousRoot;
+    fs.rmSync(workspace, { recursive: true, force: true });
   }
 });

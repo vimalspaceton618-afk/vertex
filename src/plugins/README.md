@@ -49,7 +49,7 @@ Note: `toolsetKey` must map to a known toolset factory, or the manifest will be 
 - `plugin_notion_search` - search pages/databases via Notion API
 - `plugin_sqlite_query` - run read-only SELECT queries on local sqlite files
 
-Mutating connectors (`plugin_github_issues` create, `plugin_slack_webhook_post`) require user confirmation at execution time.
+Unknown plugin tools are denied by default. Add an explicit per-tool `allowed: true` rule to enable a tool. Mutating connectors (`plugin_github_issues` create, `plugin_slack_webhook_post`) also require user confirmation at execution time unless an explicit policy rule changes that requirement.
 
 ## Additional Connector Tools
 
@@ -76,7 +76,7 @@ Policy schema:
 
 ```json
 {
-  "defaultAllow": true,
+  "defaultAllow": false,
   "tools": {
     "plugin_github_pr_merge": {
       "allowed": true,
