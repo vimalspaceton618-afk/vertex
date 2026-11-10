@@ -1,9 +1,8 @@
 /**
  * Versioned, bounded telemetry blackboard for coordinating in-process agents.
  *
- * This implementation uses an ordinary evented store. It does not pretend that
- * SharedArrayBuffer broadcasts are process-shared RPC; cross-worker transport
- * should be provided by a dedicated MessagePort/worker adapter.
+ * Payloads are JSON data and are deep-copied at every public boundary. This is
+ * an in-process store; cross-worker transport requires a MessagePort adapter.
  */
 export type BlackboardTopic =
     | "recon"
@@ -36,9 +35,28 @@ const DEFAULTS: BlackboardOptions = {
 
 type Listener = (message: BlackboardMessage) => void;
 
+function cloneJsonPayload<T>(payload: T, maxBytes: number): T {
+    if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new TypeError("Blackboard payload must be a JSON object");
+    }
+    let serialized: string | undefined;
+    try {
+        serialized = JSON.stringify(payload);
+    } catch {
+        throw new TypeError("Blackboard payload must contain only serializable JSON data");
+    }
+    if (typeof serialized !== "string") {
+        throw new TypeError("Blackboard payload must contain only serializable JSON data");
+    }
+    if (Buffer.byteLength(serialized, "utf8") > maxBytes) {
+        throw new Error("Blackboard payload exceeds configured byte limit");
+    }
+    return JSON.parse(serialized) as T;
+}
+
 export class SharedBlackboard {
     private readonly entries = new Map<string, BlackboardMessage>();
-    private readonly listeners = new Map<string, Set<Listener>>();
+    private readonly listeners = new Map<BlackboardTopic, Set<Listener>>();
     private readonly options: BlackboardOptions;
     private sequence = 0;
 
@@ -55,20 +73,20 @@ export class SharedBlackboard {
         input: Omit<BlackboardMessage<T>, "id" | "timestamp" | "expiresAt">,
         ttlMs = this.options.defaultTtlMs
     ): BlackboardMessage<T> {
-        if (!input.agentId.trim()) throw new Error("agentId is required");
+        if (!input || typeof input.agentId !== "string" || !input.agentId.trim()) {
+            throw new Error("agentId is required");
+        }
         if (!Number.isFinite(input.confidenceScore) || input.confidenceScore < 0 || input.confidenceScore > 1) {
             throw new Error("confidenceScore must be between 0 and 1");
         }
-        if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0) throw new Error("ttlMs must be a positive integer");
-
-        const serialized = JSON.stringify(input.payload);
-        if (Buffer.byteLength(serialized, "utf8") > this.options.maxPayloadBytes) {
-            throw new Error("Blackboard payload exceeds configured byte limit");
+        if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0 || !Number.isSafeInteger(Date.now() + ttlMs)) {
+            throw new Error("ttlMs must be a positive safe integer");
         }
-
+        const payload = cloneJsonPayload(input.payload, this.options.maxPayloadBytes);
         const now = Date.now();
         const message: BlackboardMessage<T> = {
             ...input,
+            payload,
             id: `${now.toString(36)}-${(++this.sequence).toString(36)}`,
             timestamp: now,
             expiresAt: now + ttlMs
@@ -81,10 +99,11 @@ export class SharedBlackboard {
             this.entries.delete(oldest);
         }
         this.emit(message as BlackboardMessage);
-        return message;
+        return { ...message, payload: cloneJsonPayload(message.payload, this.options.maxPayloadBytes) };
     }
 
     subscribe(topic: BlackboardTopic, listener: Listener): () => void {
+        if (typeof listener !== "function") throw new TypeError("listener must be a function");
         let bucket = this.listeners.get(topic);
         if (!bucket) this.listeners.set(topic, bucket = new Set());
         bucket.add(listener);
@@ -96,11 +115,15 @@ export class SharedBlackboard {
 
     read(topic?: BlackboardTopic, limit = 100): BlackboardMessage[] {
         if (!Number.isSafeInteger(limit) || limit < 0) throw new Error("limit must be a non-negative integer");
+        if (limit === 0) return [];
         this.pruneExpired(Date.now());
         return [...this.entries.values()]
             .filter(entry => !topic || entry.topic === topic)
             .slice(-limit)
-            .map(entry => ({ ...entry, payload: { ...entry.payload } }));
+            .map(entry => ({
+                ...entry,
+                payload: cloneJsonPayload(entry.payload, this.options.maxPayloadBytes)
+            }));
     }
 
     clear(): void {
@@ -115,7 +138,14 @@ export class SharedBlackboard {
 
     private emit(message: BlackboardMessage): void {
         for (const listener of [...(this.listeners.get(message.topic) ?? [])]) {
-            try { listener(message); } catch { /* isolate subscriber failures */ }
+            try {
+                listener({
+                    ...message,
+                    payload: cloneJsonPayload(message.payload, this.options.maxPayloadBytes)
+                });
+            } catch {
+                // Isolate subscriber failures and mutations from the stored record.
+            }
         }
     }
 }
