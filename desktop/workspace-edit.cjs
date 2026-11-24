@@ -1,19 +1,20 @@
 const { randomUUID } = require('node:crypto');
 const { open, lstat, realpath, rename, unlink } = require('node:fs/promises');
-const { dirname, extname, isAbsolute, join, relative, sep } = require('node:path');
+const { dirname, extname, isAbsolute, join, relative, resolve, sep } = require('node:path');
 
 const sourceExtensions = new Set('.js .jsx .cjs .mjs .ts .tsx .cts .mts .py .rs .go .c .cpp .h .hpp .java .cs .html .css .md'.split(' '));
 const maxBytes = 24_000;
 
 async function readSource(workspace, file) {
   const root = await realpath(workspace);
-  const name = relative(root, file);
+  const name = relative(resolve(workspace), resolve(file));
   if (!name || isAbsolute(name) || name === '..' || name.startsWith('..' + sep) ||
-      name.split(sep).some(part => part.startsWith('.')) ||
+      name.split(sep).some(part => part.startsWith('.') || part.includes(':')) ||
       !sourceExtensions.has(extname(name).toLowerCase())) {
     throw new Error('Select a supported source file inside the workspace.');
   }
-  if (await realpath(file) !== join(root, name)) throw new Error('Linked source paths are unsupported.');
+  file = join(root, name);
+  if (await realpath(file) !== file) throw new Error('Linked source paths are unsupported.');
   const before = await lstat(file);
   if (!before.isFile() || before.nlink !== 1 || before.size > maxBytes) {
     throw new Error('Select a regular source file under 24 KB.');
