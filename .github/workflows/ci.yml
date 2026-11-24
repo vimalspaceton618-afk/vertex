@@ -53,8 +53,6 @@ jobs:
     runs-on: windows-latest
     env:
       PUPPETEER_SKIP_DOWNLOAD: "true"
-      TEMP: ${{ runner.temp }}
-      TMP: ${{ runner.temp }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -66,6 +64,9 @@ jobs:
       - name: Install dependencies and build
         run: npm ci
       - name: Run full regression suite on Windows
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
         # Avoid concurrent CLI startup and teardown contending for Windows file handles.
         run: |
           npm run build
