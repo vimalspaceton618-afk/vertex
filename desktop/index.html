@@ -20,12 +20,21 @@
         <label>API key <input id="api-key" type="password" required maxlength="512" autocomplete="off"></label>
         <label>Model <select id="model"><option value="deepseek-flash">Flash</option><option value="deepseek-v4-pro">Pro</option></select></label>
         <label>Task <textarea id="task" rows="2" required maxlength="4000"></textarea></label>
-        <label>Source code and file paths <textarea id="context" rows="6" required maxlength="32000"></textarea></label>
-        <p>The task and pasted code are sent to DeepSeek and may incur API charges. Keep secrets out of the source context.</p>
+        <div class="actions">
+          <button id="choose-file" type="button">Choose workspace file</button>
+          <button id="use-paste" type="button" hidden>Use pasted code</button>
+        </div>
+        <label><span id="context-label">Source code and file paths</span> <textarea id="context" rows="6" required maxlength="32000"></textarea></label>
+        <p>The task and code shown above are sent to DeepSeek and may incur API charges. Keep secrets out of the source context.</p>
         <button id="propose">Send to DeepSeek and propose patch</button>
       </form>
       <p id="coding-feedback" role="status"></p>
       <pre id="proposal" hidden></pre>
+      <section id="edit" hidden>
+        <h3>Before</h3><pre id="before-edit"></pre>
+        <h3>After</h3><pre id="after-edit"></pre>
+        <button id="apply-edit" type="button">Apply reviewed edit</button>
+      </section>
     </section>
     <p id="feedback" role="status"></p>
     <section id="results" hidden>

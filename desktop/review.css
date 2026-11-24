@@ -9,3 +9,9 @@ button { font: inherit; padding: 8px 14px; border: 1px solid #59667a; background
 button:disabled { opacity: .58; cursor: default; }
 button:focus-visible { outline: 2px solid #82c7fd; outline-offset: 2px; }
 pre { padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; background: #181f28; border-radius: 6px; }
+
+form { display: grid; gap: 12px; }
+form label { display: grid; gap: 6px; }
+form :is(textarea, select, input) { padding: 8px; font: inherit; border: 1px solid #59667a; border-radius: 6px; background: #181f28; color: inherit; }
+form textarea { resize: vertical; }
+form button { justify-self: start; }
