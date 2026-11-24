@@ -30,3 +30,30 @@ async function showReview(load) {
 
 openFolder.addEventListener('click', () => showReview(window.vertexReview.choose));
 refresh.addEventListener('click', () => showReview(window.vertexReview.refresh));
+
+const codingForm = document.querySelector('#coding');
+const proposeButton = document.querySelector('#propose');
+const codingFeedback = document.querySelector('#coding-feedback');
+const proposal = document.querySelector('#proposal');
+
+codingForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  proposeButton.disabled = true;
+  proposal.hidden = true;
+  proposal.textContent = '';
+  codingFeedback.textContent = 'Waiting for DeepSeek…';
+  try {
+    proposal.textContent = await window.vertexReview.propose({
+      key: document.querySelector('#api-key').value.trim(),
+      model: document.querySelector('#model').value,
+      task: document.querySelector('#task').value,
+      context: document.querySelector('#context').value,
+    });
+    proposal.hidden = false;
+    codingFeedback.textContent = 'Proposal ready for review.';
+  } catch (error) {
+    codingFeedback.textContent = error.message;
+  } finally {
+    proposeButton.disabled = false;
+  }
+});
