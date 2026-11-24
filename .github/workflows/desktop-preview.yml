@@ -23,11 +23,13 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - run: node --test desktop/deepseek.test.cjs
+      - run: node --test desktop/provider.test.cjs desktop/deepseek.test.cjs desktop/workspace-edit.test.cjs desktop/workflow.test.cjs
       - run: npm ci
       - run: node --test test/workspace-review.test.mjs
       - run: Copy-Item -LiteralPath dist/workspace-review.cjs -Destination desktop/workspace-review.cjs
-      - run: npm install --no-audit --no-fund
+      - run: npm ci --no-audit --no-fund
+        working-directory: desktop
+      - run: npm run test:gui
         working-directory: desktop
       - run: npm run make
         working-directory: desktop

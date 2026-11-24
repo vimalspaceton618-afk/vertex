@@ -34,6 +34,8 @@ jobs:
         run: |
           npm audit --json > "$RUNNER_TEMP/npm-audit.json" || true
           node -e 'const a = require(process.env.RUNNER_TEMP + "/npm-audit.json"); console.log(JSON.stringify({metadata: a.metadata?.vulnerabilities, vulnerabilities: Object.entries(a.vulnerabilities || {}).map(([name, v]) => ({name, severity: v.severity, isDirect: v.isDirect, via: (v.via || []).map(x => typeof x === "string" ? x : x.name), fixAvailable: v.fixAvailable}))}, null, 2))'
+      - name: Desktop workflow regressions
+        run: node --test desktop/provider.test.cjs desktop/deepseek.test.cjs desktop/workspace-edit.test.cjs desktop/workflow.test.cjs
       - name: Build and test
         run: npm test
       - name: Verify npm CLI package contents
@@ -62,7 +64,16 @@ jobs:
       - name: Install dependencies and build
         run: npm ci
       - name: Run full regression suite on Windows
-        run: npm test
+        env:
+          TEMP: ${{ runner.temp }}
+          TMP: ${{ runner.temp }}
+        # Avoid concurrent CLI startup and teardown contending for Windows file handles.
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test --test-concurrency=1 test/*.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test test/ux-regression.test.mjs
 
   global-install-smoke:
     name: Global install smoke test (${{ matrix.os }})
