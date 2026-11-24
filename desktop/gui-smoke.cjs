@@ -7,7 +7,9 @@ const os = require('node:os');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 (async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'vertex-gui-'));
+  // Use the same canonical path a native Windows file picker would return.
+  const temp = await fs.realpath(os.tmpdir());
+  const root = await fs.mkdtemp(path.join(temp, 'vertex-gui-'));
   app.setPath('userData', path.join(root, 'app-data'));
   await fs.writeFile(path.join(root,'math.cjs'), 'exports.add = (a,b) => a-b;\n');
   await fs.writeFile(path.join(root,'math.test.cjs'), "require('node:assert/strict').equal(require('./math.cjs').add(2,3),-1);\n");
@@ -36,6 +38,8 @@ const { execFileSync } = require('node:child_process');
   await click('open');
   dialog.showOpenDialog = async () => ({canceled:false,filePaths:[path.join(root,'math.cjs')]});
   await click('open-file');
+  assert.equal(await evaluate("document.getElementById('filename').textContent"), 'math.cjs',
+    await evaluate("document.getElementById('feedback').textContent"));
   await evaluate("document.getElementById('editor').value += '// reviewed\\n'");
   await click('save-file');
   assert.match(await fs.readFile(path.join(root,'math.cjs'),'utf8'), /reviewed/);
