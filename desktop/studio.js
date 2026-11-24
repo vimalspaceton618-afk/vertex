@@ -23,7 +23,7 @@ for (const id of ['save-provider','forget']) $(id).onclick = () => action('Updat
   showProfile(await api.saveProfile({base: $('base').value.trim(), model: $('model').value.trim(), key: forget ? '' : $('api-key').value.trim(), forget}));
   $('feedback').textContent = 'Provider settings saved.';
 });
-$('providers').onclick = $('badge').onclick = () => { $('settings').open = true; $('preset').focus(); };
+$('providers').onclick = $('badge').onclick = () => { $('settings').open = true; $('settings').scrollIntoView({ behavior: 'smooth', block: 'center' }); $('preset').focus({ preventScroll: true }); };
 function dirtyEditor() {
   return !$('editor-panel').hidden && $('editor').value !== editorOriginal.replace(/\r\n?/g, '\n');
 }
@@ -58,11 +58,26 @@ const commands = { '/open':'open', '/edit':'open-file', '/provider':'providers',
 function info(title, body) {
   $('info-title').textContent = title; $('info-body').textContent = body; $('info').showModal();
 }
-$('commands').onclick = () => info('Slash commands', 'Type a command in the task box and press Enter.\n\n' + Object.entries(commands).map(([cmd,id]) => cmd + '   ' + $(id).textContent).join('\n'));
+$('commands').onclick = () => info('Slash commands', 'Type a command in the task box and press Enter. Ctrl/⌘ + Enter discovers context.\n\n' + Object.entries(commands).map(([cmd,id]) => cmd + '   ' + $(id).textContent).join('\n'));
 $('about').onclick = () => info('About Vertex', 'Vertex coding studio shares Git workspace review with the Vertex CLI. Inspect source, edit files, and verify a reviewed patch in your repository.');
 $('dismiss').onclick = () => $('info').close();
+// Theme is only a local UI preference; credentials remain in the OS-backed store.
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+  $('theme-toggle').textContent = theme === 'dark' ? '☼ Light theme' : '◐ Dark theme';
+  $('theme-toggle').setAttribute('aria-label', theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
+}
+let theme = 'light';
+try { if (localStorage.getItem('vertex-studio-theme') === 'dark') theme = 'dark'; } catch {}
+applyTheme(theme);
+$('theme-toggle').onclick = () => {
+  theme = theme === 'light' ? 'dark' : 'light';
+  applyTheme(theme);
+  try { localStorage.setItem('vertex-studio-theme', theme); } catch {}
+};
 $('task').onkeydown = event => {
   const cmd = $('task').value.trim();
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !$('discover').disabled) { event.preventDefault(); $('discover').click(); return; }
   if (event.key !== 'Enter' || event.shiftKey || !cmd.startsWith('/')) return;
   event.preventDefault();
   const target = Object.hasOwn(commands, cmd) && $(commands[cmd]);

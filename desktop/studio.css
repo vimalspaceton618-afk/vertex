@@ -1,24 +1,49 @@
-:root, body, main {background:#000;color:#fafafa}
-.sidebar {background:#050505;border-color:#262626}
-.sidebar button:not(.primary) {text-align:left;background:transparent;border-color:#282828}
-.sidebar-bottom,.eyebrow,.nav-label,.badge,.step,#editor,#info-body {font-family:Consolas,monospace}
-.logo,button.primary {background:#eee;border-color:white;color:black}
-.badge,.step {border-color:#444;color:#ddd}
-h1 {font-size:clamp(34px,4vw,58px);letter-spacing:-.06em;margin:8px 0}
-header {margin-bottom:4px}
-.card,dialog {background:#090909;border:1px solid #303030;border-radius:8px}
-button, input,select,textarea,pre,.file-list label {background:#111;border-color:#383838;color:#eee}
-button:not(:disabled):hover {border-color:#aaa}
-:focus-visible {outline:2px solid white}
-#feedback {color:#ccc}
-.rail {position:sticky;top:0;z-index:1;background:black;border-block:1px solid #282828;display:flex;align-items:center}
-#cat {width:0;flex:1;height:56px;image-rendering:pixelated}
-#cat-tip {max-width:50%;font:12px/1.4 Consolas,monospace;color:#ccc}
-#pet {font:11px Consolas,monospace;margin:0 8px}
-#info-body {white-space:pre-line;line-height:1.85}
-dialog {max-width:440px;padding:28px;color:white}
-dialog::backdrop {background:#000b}
-#editor {tab-size:4;white-space:pre;overflow:auto}
-.settings {grid-template-columns:1fr 1fr}
-#settings {padding:12px;border:1px solid #282828;border-radius:6px}
-@media(max-height:750px){.sidebar{gap:8px;overflow:auto}.sidebar .nav-label{margin-top:8px}}
+/* Vertex Studio personality and accessible theme overrides. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #151d19;
+  --panel: #202b24;
+  --panel-soft: #28382c;
+  --ink: #eef3e9;
+  --muted: #b3c4b5;
+  --subtle: #9dab9d;
+  --line: #3a4b3e;
+  --edge: #527257;
+  --accent: #b2dbb2;
+  --accent-hover: #a4cfa3;
+  --accent-contrast: #173023;
+  --sidebar: #101814;
+  --sidebar-ink: #eef6ed;
+  --sidebar-muted: #a3b6a5;
+  --sidebar-line: #2c4033;
+  --code-bg: #101a14;
+  --code-ink: #e5f1e7;
+  --cat-ink: #d4ebcf;
+  --shadow: 0 14px 42px rgba(0,0,0,.12);
+}
+:root[data-theme="dark"] .hero { background: linear-gradient(120deg,#25392b,#293c30 70%,#304c33); border-color:#43634a; }
+:root[data-theme="dark"] .hero h1 em, :root[data-theme="dark"] .eyebrow { color: #a9d9a8; }
+:root[data-theme="dark"] .hero-mark { background: #3e5e43; border-color:#5f8266; }
+:root[data-theme="dark"] .hero-mark span { color:#c9e8bf; }
+:root[data-theme="dark"] .hero-mark i { color:#83be87; }
+:root[data-theme="dark"] .project-display { background:rgba(255,255,255,.035); }
+:root[data-theme="dark"] .provider-badge { background:#304538; border-color:#54765c; color:#caebc9; }
+:root[data-theme="dark"] .step, :root[data-theme="dark"] .count-chip { background:#314837; border-color:#45624b; }
+:root[data-theme="dark"] #task { background:#1b2820; border-color:#3d5642; }
+:root[data-theme="dark"] .file-list label:has(input:checked) { background:#34543d; border-color:#5f8b69; }
+:root[data-theme="dark"] .inspector-card { background:#2c4331; border-color:#44614a; }
+:root[data-theme="dark"] .inspector-title { color:#b7d9b8; }
+:root[data-theme="dark"] .inspector-card > p, :root[data-theme="dark"] .method-steps small { color:#b6c9b7; }
+:root[data-theme="dark"] .method-steps, :root[data-theme="dark"] .method-steps li { border-color:#4d6951; }
+:root[data-theme="dark"] .method-steps li > span { color:#a5c7a7; }
+:root[data-theme="dark"] .notice { background:#403522; border-color:#8f7240; }
+:root[data-theme="dark"] textarea::placeholder, :root[data-theme="dark"] input::placeholder { color:#8ba092; }
+:root[data-theme="dark"] .safety-dot { background:#95d7a6; }
+:root[data-theme="dark"] .open-repository { color:#193927; }
+:root[data-theme="dark"] .rail { background:var(--panel); }
+:root[data-theme="dark"] .rail-heading { color:var(--ink); }
+:root[data-theme="dark"] .hero-mark { box-shadow:14px 15px 0 rgba(0,0,0,.16); }
+:root[data-theme="dark"] .project-display p { color:var(--sidebar-ink); }
+/* Keep long paths, model IDs, and code samples inside their own surfaces. */
+#filename, #workspace, #patches h3, #destination, .provider-badge { overflow-wrap: anywhere; }
+#settings summary:focus-visible { border-radius: 4px; }

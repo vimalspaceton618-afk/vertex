@@ -26,7 +26,7 @@ if (!ownsInstance) {
   app.whenReady().then(() => {
     const { reviewWorkspace } = require('./workspace-review.cjs');
     window = new BrowserWindow({
-      width: 1380, height: 900, minWidth: 900, minHeight: 650, backgroundColor: '#000000', autoHideMenuBar: true, title: 'Vertex',
+      width: 1380, height: 900, minWidth: 900, minHeight: 650, backgroundColor: '#f4f6f1', autoHideMenuBar: true, title: 'Vertex',
       webPreferences: {
         preload: join(__dirname, 'preload.cjs'), contextIsolation: true,
         nodeIntegration: false, sandbox: true,

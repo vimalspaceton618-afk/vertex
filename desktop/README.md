@@ -31,3 +31,8 @@ node --test desktop/provider.test.cjs desktop/deepseek.test.cjs desktop/workspac
 The regression fixture creates a Git repository with an implementation and a test, applies both edits, runs Node against the project test, and verifies the result. It also tests stale files, injected partial failures, concurrent edits, restart recovery, context validation, and nonzero command results. Provider tests use mocked responses; they do not establish live-model performance.
 
 `.github/workflows/desktop-preview.yml` builds the Windows installer and portable `Vertex-win-x64.zip` on pushes to `work/**` or `main`. The preview is unsigned. No competitor benchmark has been run.
+
+
+## Studio visual system
+
+Vertex Studio uses an original sage-and-carbon interface: a dedicated project sidebar, focused task composer, four-stage review flow, persistent guide, and a pixel cat in the activity rail. The default is a light technical workspace, with an optional dark mode toggle. The theme preference is stored locally and never contains credentials; provider keys continue to use the existing OS-backed secure store. Click the model badge or **Model provider** in the sidebar to open endpoint, key, and model settings. **Ctrl/⌘ + Enter** in the task field discovers context after a repository is selected. All existing provider, editor, patch approval, test approval, recovery, and slash-command flows are retained.

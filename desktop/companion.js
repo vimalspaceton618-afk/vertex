@@ -31,19 +31,23 @@
     if (canvas.height !== 28) canvas.height = 28;
     const edge = width - 27;
     position = Math.max(1, Math.min(position, edge));
-    const awake = working || looking > 0;
-    const stride = working && !looking && tick % 66 < 51 && !reduced.matches;
+    const roaming = !working && tick % 170 < 28;
+    const awake = working || looking > 0 || roaming;
+    const stride = (working || roaming) && !looking && tick % 66 < 51 && !reduced.matches;
     if (stride) {
       position += direction * 2;
       if (position >= edge || position <= 1) direction *= -1;
       position = Math.max(1, Math.min(position, edge));
     }
     pen.clearRect(0, 0, width, 28);
+    const ink = getComputedStyle(document.documentElement).getPropertyValue('--cat-ink').trim() || '#213d2f';
     for (let i = 0; i < width / 20; i++) {
-      pen.fillStyle = (i + Math.floor(tick / 8)) % 6 === 0 ? '#777' : '#333';
+      pen.fillStyle = ink;
+      pen.globalAlpha = (i + Math.floor(tick / 8)) % 6 === 0 ? .28 : .11;
       pen.fillRect((i * 71 + 9) % width, (i * 13 + 3) % 22, 1, 1);
     }
-    pen.fillStyle = '#fff';
+    pen.globalAlpha = 1;
+    pen.fillStyle = ink;
     const legs = stride && tick % 4 < 2 ? ['     #  #     #  #','     ###      ###'] : ['       # #      # #','       ###      ###'];
     const sprite = awake ? walking.concat(legs) : sleeping;
     const face = awake && !stride && tick % 32 < 8 ? -direction : direction;

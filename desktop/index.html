@@ -1,31 +1,146 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>Vertex</title>
-<link rel="stylesheet" href="review.css"><link rel="stylesheet" href="studio.css"><script defer src="companion.js"></script><script defer src="review.js"></script><script defer src="studio.js"></script>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vertex — Engineering workspace</title>
+  <link rel="stylesheet" href="review.css">
+  <link rel="stylesheet" href="studio.css">
+  <script defer src="companion.js"></script>
+  <script defer src="review.js"></script>
+  <script defer src="studio.js"></script>
 </head>
 <body>
-<aside class="sidebar"><div class="brand"><span class="logo">V</span> Vertex <small>DESKTOP</small></div>
-<button id="open" class="primary">＋ Open repository</button>
-<div class="nav-label">WORKSPACE</div><p id="workspace">No repository selected</p><button id="refresh" disabled>↻ Refresh changes</button>
-<div class="nav-label">TOOLS</div><button id="open-file">Open source file</button><button id="providers">Model provider</button><button id="commands">Slash commands</button><button id="about">About Vertex</button>
-<div class="sidebar-bottom">Vertex Studio<br><span>Local files · Reviewed changes</span></div></aside>
-<main><header><div><span class="eyebrow">VERTEX / WORKSPACE</span><h1>Coding studio</h1></div><button id="badge" class="badge">deepseek-flash</button></header>
-<div class="rail"><canvas id="cat" aria-label="Pixel cat companion"></canvas><output id="cat-tip" hidden></output><button id="pet" aria-label="Call your cat">pspsps</button></div>
-<dialog id="info"><h2 id="info-title"></h2><p id="info-body"></p><button id="dismiss">Close</button></dialog>
-<section class="card" id="editor-panel" hidden><h2 id="filename">Source editor</h2><textarea id="editor" aria-label="Source editor" rows="12" spellcheck="false"></textarea><button id="save-file">Save file</button></section>
-<div id="recovery" class="notice" hidden><p id="recovery-detail"></p><button id="recover">Recover interrupted patch</button></div>
-<p id="feedback" role="status" aria-live="polite">Open a Git repository to start.</p>
-<section class="card"><div class="section-title"><span class="step">01</span><h2>What are we building?</h2></div>
-<label for="task">Task</label><textarea id="task" rows="3" maxlength="4000" placeholder="Describe the change, expected behavior, and tests…"></textarea>
-<details id="settings"><summary>Model provider</summary><div class="settings"><label>Provider<select id="preset"><option>DeepSeek</option><option>Compatible endpoint</option></select></label><label>Base URL<input id="base" type="url" value="https://api.deepseek.com"></label><label>API key<input id="api-key" type="password" maxlength="512" autocomplete="off" placeholder="Kept in memory for this session"></label><label>Model<input id="model" list="models" value="deepseek-flash" maxlength="200"><datalist id="models"><option value="deepseek-flash"><option value="deepseek-v4-pro"></datalist></label></div><button id="save-provider">Save provider securely</button> <button id="forget">Forget saved key</button></details>
-<button id="discover" disabled>Discover repository context →</button></section>
-<section class="card" id="context-panel" hidden><div class="section-title"><span class="step">02</span><h2>Review context</h2><span id="context-count" class="muted"></span></div>
-<p>Tracked source files ranked by task keywords. Select up to 12 files. Review the exact source payload before sending it to your provider.</p>
-<div id="files" class="file-list"></div><button id="preview-context">Preview selected context</button>
-<pre id="context" hidden></pre><p class="muted">The task and selected source payload are sent to <strong id="destination">https://api.deepseek.com</strong>. API charges may apply.</p><button id="propose" class="primary" disabled>Send context and generate patch</button></section>
-<section class="card" id="patch-panel" hidden><div class="section-title"><span class="step">03</span><h2>Review changes</h2></div><div id="patches"></div><button id="apply" class="primary">Apply reviewed patch</button></section>
-<section class="card"><div class="section-title"><span class="step">04</span><h2>Verify the result</h2></div><label for="command">Project test command</label><div class="command-row"><input id="command" placeholder="e.g. npm test" maxlength="2000"><button id="test" disabled>Run with approval</button></div><p class="muted">Runs in the selected repository. Stops after 2 minutes or 512 KB of output.</p><pre id="test-output" hidden></pre></section>
-<details id="results" class="card" hidden><summary>Workspace changes</summary><h3>Status</h3><pre id="status"></pre><h3>Staged</h3><pre id="staged"></pre><h3>Unstaged</h3><pre id="unstaged"></pre></details>
-</main></body></html>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Vertex navigation">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">V<span class="logo-point">.</span></span>
+      <span class="brand-name">vertex <small>STUDIO</small></span>
+    </div>
+    <div class="sidebar-intro">An engineering workspace for deliberate, reviewable changes.</div>
+    <button id="open" class="primary open-repository"><span aria-hidden="true">＋</span> Open repository</button>
+
+    <div class="sidebar-section">
+      <div class="nav-label">CURRENT PROJECT</div>
+      <div class="project-display"><span class="project-indicator" aria-hidden="true"></span><p id="workspace">No repository selected</p></div>
+      <button id="refresh" class="sidebar-action" disabled><span aria-hidden="true">↻</span> Refresh changes</button>
+    </div>
+    <nav class="sidebar-section sidebar-actions" aria-label="Workspace tools">
+      <div class="nav-label">WORKSPACE TOOLS</div>
+      <button id="open-file" class="sidebar-action"><span class="tool-symbol" aria-hidden="true">⌘</span> Source editor</button>
+      <button id="providers" class="sidebar-action"><span class="tool-symbol" aria-hidden="true">◇</span> Model provider</button>
+      <button id="commands" class="sidebar-action"><span class="tool-symbol" aria-hidden="true">/</span> Slash commands</button>
+      <button id="about" class="sidebar-action"><span class="tool-symbol" aria-hidden="true">ⓘ</span> About Vertex</button>
+    </nav>
+    <div class="sidebar-bottom"><span class="status-led" aria-hidden="true"></span> LOCAL-FIRST WORKSPACE <small>Changes stay under your review.</small></div>
+  </aside>
+
+  <main class="workspace-area">
+    <div class="content-wrap">
+      <header class="topbar">
+        <div class="breadcrumb"><span class="crumb-mark">V /</span> WORKSPACE <span class="crumb-divider">/</span> STUDIO</div>
+        <div class="top-actions">
+          <button id="theme-toggle" class="quiet-button" aria-label="Toggle color theme">◐ Dark theme</button>
+          <button id="badge" class="provider-badge" title="Configure model provider">deepseek-flash</button>
+        </div>
+      </header>
+
+      <section class="hero" aria-label="Vertex introduction">
+        <div class="hero-copy">
+          <span class="eyebrow"><span class="eyebrow-dot"></span> ENGINEERING, WITH INTENTION</span>
+          <h1>Make space for <em>better code.</em></h1>
+          <p>A focused place to understand a codebase, shape a change, and verify what ships.</p>
+        </div>
+        <div class="hero-mark" aria-hidden="true"><span>V</span><i>●</i></div>
+      </section>
+
+      <div class="rail" aria-label="Vertex companion">
+        <div class="rail-heading"><span class="companion-led"></span> COMPANION <small>Along for the build</small></div>
+        <canvas id="cat" aria-label="Interactive pixel cat companion"></canvas>
+        <output id="cat-tip" aria-live="polite" hidden></output>
+        <button id="pet" class="quiet-button" aria-label="Call your cat">pspsps ↗</button>
+      </div>
+
+      <div id="recovery" class="notice" hidden>
+        <div class="notice-icon">!</div>
+        <div><strong>Recovery available</strong><p id="recovery-detail"></p></div>
+        <button id="recover">Recover interrupted patch</button>
+      </div>
+      <p id="feedback" class="feedback" role="status" aria-live="polite">Open a Git repository to start.</p>
+
+      <div class="workflow-grid">
+        <div class="workflow-main">
+          <section class="card" id="editor-panel" hidden>
+            <div class="section-title"><span class="step">EDIT</span><div><h2 id="filename">Source editor</h2><p class="section-description">Editing a local source file</p></div></div>
+            <textarea id="editor" aria-label="Source editor" rows="12" spellcheck="false"></textarea>
+            <div class="card-footer"><span class="muted">Review before saving; external changes are checked.</span><button id="save-file" class="primary">Save file</button></div>
+          </section>
+
+          <section class="card compose-card">
+            <div class="section-title"><span class="step">01</span><div><h2>Describe the change</h2><p class="section-description">Start with the outcome, not just the implementation.</p></div></div>
+            <label for="task">YOUR INSTRUCTION</label>
+            <textarea id="task" rows="4" maxlength="4000" placeholder="What should Vertex improve? Describe the expected behavior and how to verify it…"></textarea>
+            <div class="composer-hint"><span>Use <kbd>/help</kbd> for commands</span><span><kbd>Ctrl</kbd> + <kbd>Enter</kbd> to discover context</span></div>
+            <details id="settings">
+              <summary><span class="summary-icon">◇</span> Model provider settings <span class="summary-note">Endpoint · Credentials · Model</span></summary>
+              <div class="settings">
+                <label>Provider <select id="preset"><option>DeepSeek</option><option>Compatible endpoint</option></select></label>
+                <label>Base URL <input id="base" type="url" value="https://api.deepseek.com" autocomplete="url" spellcheck="false"></label>
+                <label>API key <input id="api-key" type="password" maxlength="512" autocomplete="off" placeholder="Kept in memory for this session"></label>
+                <label>Model ID <input id="model" list="models" value="deepseek-flash" maxlength="200" spellcheck="false"><datalist id="models"><option value="deepseek-flash"><option value="deepseek-v4-pro"></datalist></label>
+              </div>
+              <div class="settings-actions"><button id="save-provider">Save provider securely</button><button id="forget" class="quiet-button">Forget saved key</button></div>
+            </details>
+            <div class="card-footer"><span class="muted"><span class="safety-dot"></span> No source is sent until you approve.</span><button id="discover" class="primary" disabled>Discover context <span aria-hidden="true">↗</span></button></div>
+          </section>
+
+          <section class="card" id="context-panel" hidden>
+            <div class="section-title"><span class="step">02</span><div><h2>Choose context</h2><p class="section-description">Select the files Vertex may inspect.</p></div><span id="context-count" class="count-chip"></span></div>
+            <p>Tracked source files ranked by your task. Select up to 12 files and preview the exact source payload before sending it.</p>
+            <div id="files" class="file-list"></div>
+            <button id="preview-context">Preview selected context</button>
+            <pre id="context" hidden></pre>
+            <p class="muted context-disclosure">Your task and selected source are sent to <strong id="destination">https://api.deepseek.com</strong>. Provider charges may apply.</p>
+            <div class="card-footer"><span class="muted">You control what leaves this workspace.</span><button id="propose" class="primary" disabled>Generate reviewed patch ↗</button></div>
+          </section>
+
+          <section class="card" id="patch-panel" hidden>
+            <div class="section-title"><span class="step">03</span><div><h2>Review the patch</h2><p class="section-description">Inspect the proposed changes before applying them.</p></div></div>
+            <div id="patches"></div>
+            <div class="card-footer"><span class="muted">Nothing is written until you approve.</span><button id="apply" class="primary">Apply reviewed patch</button></div>
+          </section>
+
+          <section class="card">
+            <div class="section-title"><span class="step">04</span><div><h2>Verify the result</h2><p class="section-description">Run the project test command with approval.</p></div></div>
+            <label for="command">TEST COMMAND</label>
+            <div class="command-row"><input id="command" placeholder="npm test" maxlength="2000" spellcheck="false"><button id="test" disabled>Run with approval ↗</button></div>
+            <p class="muted">Runs inside the selected repository. Limited to 2 minutes and 512 KB of output.</p>
+            <pre id="test-output" hidden></pre>
+          </section>
+
+          <details id="results" class="card" hidden><summary>Workspace changes <span class="muted">Git status and diffs</span></summary><h3>Status</h3><pre id="status"></pre><h3>Staged</h3><pre id="staged"></pre><h3>Unstaged</h3><pre id="unstaged"></pre></details>
+        </div>
+
+        <aside class="inspector" aria-label="Workspace guide">
+          <div class="inspector-card">
+            <div class="inspector-title"><span class="tiny-square"></span> THE VERTEX METHOD</div>
+            <h2>Think. Change.<br>Prove.</h2>
+            <p>Four deliberate steps, with the engineer always in control.</p>
+            <ol class="method-steps">
+              <li><span>01</span><div><strong>Define</strong><small>Give the agent a precise goal.</small></div></li>
+              <li><span>02</span><div><strong>Context</strong><small>Choose what it can read.</small></div></li>
+              <li><span>03</span><div><strong>Review</strong><small>See each edit before it lands.</small></div></li>
+              <li><span>04</span><div><strong>Verify</strong><small>Run the checks you trust.</small></div></li>
+            </ol>
+          </div>
+          <div class="inspector-footnote"><span class="trust-symbol">◎</span><strong>Designed for real work.</strong><p>Local files. Explicit approvals. Clear boundaries between suggestion and execution.</p></div>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+
+<dialog id="info" aria-labelledby="info-title"><h2 id="info-title"></h2><p id="info-body"></p><div class="dialog-actions"><button id="dismiss" class="primary">Close</button></div></dialog>
+</body>
+</html>
