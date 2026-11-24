@@ -14,6 +14,19 @@
     <div class="actions"><button id="open">Open folder</button><button id="refresh" disabled>Refresh</button></div>
   </header>
   <main>
+    <section>
+      <h2>DeepSeek coding</h2>
+      <form id="coding" autocomplete="off">
+        <label>API key <input id="api-key" type="password" required maxlength="512" autocomplete="off"></label>
+        <label>Model <select id="model"><option value="deepseek-flash">Flash</option><option value="deepseek-v4-pro">Pro</option></select></label>
+        <label>Task <textarea id="task" rows="2" required maxlength="4000"></textarea></label>
+        <label>Source code and file paths <textarea id="context" rows="6" required maxlength="32000"></textarea></label>
+        <p>The task and pasted code are sent to DeepSeek and may incur API charges. Keep secrets out of the source context.</p>
+        <button id="propose">Send to DeepSeek and propose patch</button>
+      </form>
+      <p id="coding-feedback" role="status"></p>
+      <pre id="proposal" hidden></pre>
+    </section>
     <p id="feedback" role="status"></p>
     <section id="results" hidden>
       <h2>Status</h2><pre id="status"></pre>

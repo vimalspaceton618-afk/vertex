@@ -48,6 +48,19 @@ if (installEvent) {
       if (!trusted(event) || !workspace) throw new Error('Choose a workspace first.');
       return reviewWorkspace(workspace);
     });
+    const { proposePatch } = require('./deepseek.cjs');
+    let proposing = false;
+    ipcMain.handle('coding:propose', async (event, input) => {
+      if (!trusted(event) || proposing || !input || typeof input !== 'object') {
+        throw new Error('A coding request is already running or unavailable.');
+      }
+      proposing = true;
+      try {
+        return await proposePatch(input);
+      } finally {
+        proposing = false;
+      }
+    });
     return window.loadFile(page);
   }).catch(error => {
     dialog.showErrorBox('Vertex could not start', error.message);
