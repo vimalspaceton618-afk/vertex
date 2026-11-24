@@ -53,6 +53,8 @@ jobs:
     runs-on: windows-latest
     env:
       PUPPETEER_SKIP_DOWNLOAD: "true"
+      TEMP: ${{ runner.temp }}
+      TMP: ${{ runner.temp }}
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -64,7 +66,13 @@ jobs:
       - name: Install dependencies and build
         run: npm ci
       - name: Run full regression suite on Windows
-        run: npm test
+        # Avoid concurrent CLI startup and teardown contending for Windows file handles.
+        run: |
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test --test-concurrency=1 test/*.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test test/ux-regression.test.mjs
 
   global-install-smoke:
     name: Global install smoke test (${{ matrix.os }})
