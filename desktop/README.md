@@ -1,14 +1,16 @@
 # Vertex Desktop
 
-Vertex is a desktop coding workspace backed by DeepSeek. The terminal CLI/TUI remains available separately.
+Vertex is a desktop coding workspace with a source editor, task-aware pixel companion, and configurable chat-completions provider. The terminal CLI/TUI remains available separately.
 
 ## Complete workflow
 
 1. Open a trusted Git repository and describe a task.
 2. Discover tracked source files. Paths are ranked by task keywords; up to 80 supported text files are offered from the first 1,000 ranked paths. Hidden paths, links, binaries, and files over 24 KB are excluded.
-3. Select 1–12 relevant files and preview the exact JSON source payload (32,000 characters maximum). The task is also sent. The API key stays in memory.
+3. Select 1–12 relevant files and preview the exact JSON source payload (32,000 characters maximum). The task is also sent. A typed API key lasts for the session. Save provider securely encrypts it for the current Windows user and binds it to the full base URL. The portable ZIP contains no user settings. Use a local HTTP endpoint or an HTTPS endpoint and enter its exact model ID.
 4. Generate a coordinated patch, review each before/after pair, and approve application in the native dialog. This milestone edits existing files, with one unique replacement region per file. Include a larger region for related edits within one file.
 5. Enter your project's test command and approve the exact command and working directory. Vertex shows output, exit code, termination reason, and duration. Commands run with your user permissions, with a two-minute / 512 KB limit. A zero exit code verifies that command, not overall task correctness.
+
+Use Open source file to edit an existing supported file in the selected repository. Save checks for external changes. Type `/help` in the task box for desktop commands. The cat walks in its own strip during operations. Click it or use **pspsps** to call it.
 
 ## Recovery
 
@@ -23,7 +25,7 @@ From the repository root: `npm ci`, then copy `dist/workspace-review.cjs` to `de
 Dependency-free desktop regression checks:
 
 ```
-node --test desktop/deepseek.test.cjs desktop/workspace-edit.test.cjs desktop/workflow.test.cjs
+node --test desktop/provider.test.cjs desktop/deepseek.test.cjs desktop/workspace-edit.test.cjs desktop/workflow.test.cjs
 ```
 
 The regression fixture creates a Git repository with an implementation and a test, applies both edits, runs Node against the project test, and verifies the result. It also tests stale files, injected partial failures, concurrent edits, restart recovery, context validation, and nonzero command results. Provider tests use mocked responses; they do not establish live-model performance.

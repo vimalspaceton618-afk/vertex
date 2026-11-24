@@ -1,6 +1,10 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('vertexReview', {
+  profile: () => ipcRenderer.invoke('provider:load'),
+  saveProfile: input => ipcRenderer.invoke('provider:save', input),
+  openFile: () => ipcRenderer.invoke('editor:open'),
+  saveFile: text => ipcRenderer.invoke('editor:save', text),
   discover: input => ipcRenderer.invoke('agent:discover', input),
   context: names => ipcRenderer.invoke('agent:context', names),
   proposeWorkspace: input => ipcRenderer.invoke('agent:propose', input),

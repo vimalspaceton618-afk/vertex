@@ -4,13 +4,15 @@ let hasWorkspace = false, contextReady = false, busy = false;
 function locks() {
   document.querySelectorAll('button,input,textarea,select').forEach(el => { el.disabled = busy; });
   for (const id of ['refresh','discover','test']) $(id).disabled = busy || !hasWorkspace;
+  $('open-file').disabled = busy || !hasWorkspace;
+  $('pet').disabled = false;
   $('propose').disabled = busy || !contextReady;
 }
 async function action(message, fn) {
   if (busy) return;
-  busy = true; locks(); $('feedback').textContent = message;
+  busy = true; window.catWorking(true); locks(); $('feedback').textContent = message;
   try { await fn(); } catch (error) { $('feedback').textContent = error.message; }
-  finally { busy = false; locks(); }
+  finally { busy = false; window.catWorking(false); locks(); }
 }
 function showReport(report) {
   if (!report) return;
@@ -20,8 +22,9 @@ function showReport(report) {
 }
 function invalidate() { contextReady = false; $('context').hidden = true; $('patch-panel').hidden = true; locks(); }
 $('open').onclick = () => action('Opening repository…', async () => {
+  if (!canDiscard()) return;
   const report = await api.choose();
-  if (report) { showReport(report); invalidate(); $('context-panel').hidden = true; $('test-output').hidden = true; }
+  if (report) { $('editor-panel').hidden = true; showReport(report); invalidate(); $('context-panel').hidden = true; $('test-output').hidden = true; }
   $('feedback').textContent = report ? 'Repository ready. Describe your task.' : 'Folder selection cancelled.';
 });
 $('refresh').onclick = () => action('Reading Git changes…', async () => { showReport(await api.refresh()); $('feedback').textContent = 'Workspace changes refreshed.'; });
@@ -45,9 +48,9 @@ $('preview-context').onclick = () => action('Preparing context…', async () => 
   $('context').textContent = await api.context(names); $('context').hidden = false; contextReady = true;
   $('feedback').textContent = 'Context ready for review. Nothing has been sent yet.';
 });
-$('propose').onclick = () => action('Vertex is preparing a patch with DeepSeek…', async () => {
+$('propose').onclick = () => action('Vertex is preparing a patch with your provider…', async () => {
   $('patch-panel').hidden = true;
-  const edits = await api.proposeWorkspace({ task: $('task').value, key: $('api-key').value.trim(), model: $('model').value });
+  const edits = await api.proposeWorkspace({ task: $('task').value, key: $('api-key').value.trim(), base: $('base').value.trim(), model: $('model').value.trim() });
   $('patches').replaceChildren();
   edits.forEach(edit => {
     const article = document.createElement('article'), title = document.createElement('h3'), summary = document.createElement('p'), diff = document.createElement('div');
@@ -79,4 +82,3 @@ $('recover').onclick = () => action('Recovering interrupted patch…', async () 
   const result = await api.recover(); await recoveryStatus();
   $('feedback').textContent = !result ? 'Recovery cancelled.' : result.conflicts.length ? 'Preserved changed files needing manual recovery: ' + result.conflicts.join(', ') : 'Original files restored.';
 });
-locks(); action('Checking for interrupted work…', async () => { await recoveryStatus(); $('feedback').textContent = 'Open a Git repository to start.'; });

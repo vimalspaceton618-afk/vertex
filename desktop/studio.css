@@ -1,0 +1,24 @@
+:root, body, main {background:#000;color:#fafafa}
+.sidebar {background:#050505;border-color:#262626}
+.sidebar button:not(.primary) {text-align:left;background:transparent;border-color:#282828}
+.sidebar-bottom,.eyebrow,.nav-label,.badge,.step,#editor,#info-body {font-family:Consolas,monospace}
+.logo,button.primary {background:#eee;border-color:white;color:black}
+.badge,.step {border-color:#444;color:#ddd}
+h1 {font-size:clamp(34px,4vw,58px);letter-spacing:-.06em;margin:8px 0}
+header {margin-bottom:4px}
+.card,dialog {background:#090909;border:1px solid #303030;border-radius:8px}
+button, input,select,textarea,pre,.file-list label {background:#111;border-color:#383838;color:#eee}
+button:not(:disabled):hover {border-color:#aaa}
+:focus-visible {outline:2px solid white}
+#feedback {color:#ccc}
+.rail {position:sticky;top:0;z-index:1;background:black;border-block:1px solid #282828;display:flex;align-items:center}
+#cat {width:0;flex:1;height:56px;image-rendering:pixelated}
+#cat-tip {max-width:50%;font:12px/1.4 Consolas,monospace;color:#ccc}
+#pet {font:11px Consolas,monospace;margin:0 8px}
+#info-body {white-space:pre-line;line-height:1.85}
+dialog {max-width:440px;padding:28px;color:white}
+dialog::backdrop {background:#000b}
+#editor {tab-size:4;white-space:pre;overflow:auto}
+.settings {grid-template-columns:1fr 1fr}
+#settings {padding:12px;border:1px solid #282828;border-radius:6px}
+@media(max-height:750px){.sidebar{gap:8px;overflow:auto}.sidebar .nav-label{margin-top:8px}}

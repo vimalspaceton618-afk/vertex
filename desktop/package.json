@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "make": "electron-forge make",
-    "test": "node --test deepseek.test.cjs workspace-edit.test.cjs workflow.test.cjs",
+    "test": "node --test provider.test.cjs deepseek.test.cjs workspace-edit.test.cjs workflow.test.cjs",
     "test:gui": "electron gui-smoke.cjs"
   },
   "devDependencies": {

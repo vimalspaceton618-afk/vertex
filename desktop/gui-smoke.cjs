@@ -26,7 +26,19 @@ const { execFileSync } = require('node:child_process');
   const evaluate = code => win.webContents.executeJavaScript(code);
   async function idle() { for(let i=0;i<200;i++){ if(await evaluate("!document.getElementById('open').disabled")) return; await wait(50); } throw new Error('UI operation timed out'); }
   async function click(id){ await evaluate(`document.getElementById('${id}').click()`); await idle(); }
-  await idle(); await click('open');
+  await idle();
+  await evaluate("document.getElementById('task').value='/about';document.getElementById('task').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}))");
+  assert.equal(await evaluate("document.getElementById('info').open"),true);
+  await click('dismiss');
+  await evaluate("document.getElementById('api-key').value='fixture-key'");
+  await click('save-provider');
+  assert.equal(await evaluate("document.getElementById('api-key').placeholder"),'Saved in Windows');
+  await click('open');
+  dialog.showOpenDialog = async () => ({canceled:false,filePaths:[path.join(root,'math.cjs')]});
+  await click('open-file');
+  await evaluate("document.getElementById('editor').value += '// reviewed\\n'");
+  await click('save-file');
+  assert.match(await fs.readFile(path.join(root,'math.cjs'),'utf8'), /reviewed/);
   await evaluate("document.getElementById('task').value='Correct addition and its test'");
   await click('discover');
   await evaluate("document.querySelectorAll('#files input').forEach(el=>{el.checked=true;el.dispatchEvent(new Event('change'))})");

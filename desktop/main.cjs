@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, safeStorage } = require('electron');
 const { basename, dirname, join } = require('node:path');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
@@ -26,7 +26,7 @@ if (!ownsInstance) {
   app.whenReady().then(() => {
     const { reviewWorkspace } = require('./workspace-review.cjs');
     window = new BrowserWindow({
-      width: 1380, height: 900, minWidth: 900, minHeight: 650, backgroundColor: '#101113', title: 'Vertex',
+      width: 1380, height: 900, minWidth: 900, minHeight: 650, backgroundColor: '#000000', autoHideMenuBar: true, title: 'Vertex',
       webPreferences: {
         preload: join(__dirname, 'preload.cjs'), contextIsolation: true,
         nodeIntegration: false, sandbox: true,
@@ -64,6 +64,23 @@ if (!ownsInstance) {
       });
     }
 
+    const profiles = require('./provider.cjs').profileStore(join(app.getPath('userData'), 'provider.json'), safeStorage);
+    register('provider:load', () => profiles.load());
+    register('provider:save', input => profiles.save(input));
+    register('editor:open', async () => {
+      if (!workspace) throw new Error('Open a repository first.');
+      const result = await dialog.showOpenDialog(window, { defaultPath: workspace, properties: ['openFile'] });
+      if (result.canceled) return null;
+      source = await readSource(workspace, result.filePaths[0]);
+      return { name: source.name, text: source.text };
+    });
+    register('editor:save', async text => {
+      if (!source || typeof text !== 'string' || text.includes('\0') || Buffer.byteLength(text) > 24000)
+        throw new Error('Select a source file and keep it under 24 KB.');
+      await applyEdit(source, { updated: text });
+      source = await readSource(workspace, source.file);
+      selected = []; discovered = []; plan = undefined;
+    });
     register('review:choose', async () => {
       const result = await dialog.showOpenDialog(window, { properties: ['openDirectory'] });
       if (result.canceled) return null;
@@ -97,7 +114,9 @@ if (!ownsInstance) {
     register('agent:propose', async input => {
       plan = undefined;
       const context = workflow.contextFor(selected);
-      const response = await proposeWorkspace({ key: input?.key, model: input?.model, task: input?.task, context });
+      const base = input?.base;
+      const key = input?.key || await profiles.credentials(base);
+      const response = await proposeWorkspace({ key, base, model: input?.model, task: input?.task, context });
       plan = workflow.planEdits(selected, response);
       return plan.map(({ snapshot, edit }) => ({ name: snapshot.name, before: edit.find, after: edit.replacement, summary: edit.summary }));
     });
