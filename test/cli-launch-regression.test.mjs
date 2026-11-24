@@ -88,7 +88,7 @@ test('every advertised TUI command has a dispatch path', () => {
 });
 
 test('no-argument launch remains wired to the interactive Ink UI', () => {
-  const parseIndex = cliSource.indexOf('program.parse(process.argv)');
+  const parseIndex = cliSource.indexOf('await program.parseAsync(process.argv)');
   const normalStartupIndex = cliSource.indexOf('if (!commandHandled) {');
   const interactiveBranchIndex = cliSource.indexOf("import('./ui.js')");
 
@@ -96,7 +96,7 @@ test('no-argument launch remains wired to the interactive Ink UI', () => {
   assert.ok(normalStartupIndex > parseIndex, 'subcommands must be parsed before normal runtime initialization');
   assert.ok(interactiveBranchIndex > normalStartupIndex, 'the default launch branch follows command handling');
   assert.ok(
-    cliSource.includes('if (process.argv.length > 2) {\n  program.parse(process.argv);\n}'),
+    cliSource.includes('if (process.argv.length > 2) {\n  await program.parseAsync(process.argv);\n}'),
     'no-argument launch must skip Commander parsing so the TUI can start'
   );
   assert.ok(
