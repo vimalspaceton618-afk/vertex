@@ -1,0 +1,30 @@
+{
+  "name": "vertex-desktop",
+  "productName": "Vertex",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Vertex workspace review",
+  "author": "ARcHi",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "make": "electron-forge make"
+  },
+  "devDependencies": {
+    "electron": "45.4.1",
+    "@electron-forge/cli": "8.0.1",
+    "@electron-forge/maker-squirrel": "8.0.1"
+  },
+  "config": {
+    "forge": {
+      "makers": [
+        {
+          "name": "@electron-forge/maker-squirrel",
+          "config": {
+            "setupExe": "VertexSetup.exe"
+          }
+        }
+      ]
+    }
+  }
+}

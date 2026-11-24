@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vertex</title>
+  <link rel="stylesheet" href="review.css">
+  <script defer src="review.js"></script>
+</head>
+<body>
+  <header>
+    <div><h1>Workspace review</h1><p id="workspace">Choose a trusted Git repository to inspect local changes.</p></div>
+    <div class="actions"><button id="open">Open folder</button><button id="refresh" disabled>Refresh</button></div>
+  </header>
+  <main>
+    <p id="feedback" role="status"></p>
+    <section id="results" hidden>
+      <h2>Status</h2><pre id="status"></pre>
+      <h2>Staged changes</h2><pre id="staged"></pre>
+      <h2>Unstaged changes</h2><pre id="unstaged"></pre>
+    </section>
+  </main>
+</body>
+</html>

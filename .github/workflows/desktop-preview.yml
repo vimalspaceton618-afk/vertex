@@ -1,0 +1,45 @@
+name: Windows desktop preview
+on:
+  push:
+    branches: [main, "work/**"]
+    paths:
+      - 'desktop/**'
+      - 'src/workspace-review.cts'
+      - 'src/cli.tsx'
+      - 'test/workspace-review.test.mjs'
+      - '.github/workflows/desktop-preview.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows-package:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: node --test test/workspace-review.test.mjs
+      - run: Copy-Item -LiteralPath dist/workspace-review.cjs -Destination desktop/workspace-review.cjs
+      - run: npm install --no-audit --no-fund
+        working-directory: desktop
+      - run: npm run make
+        working-directory: desktop
+      - name: Create portable archive
+        run: |
+          $appPath = 'desktop/out/Vertex-win32-x64'
+          if (-not (Test-Path -LiteralPath "$appPath/Vertex.exe")) { throw 'Missing Vertex.exe' }
+          if (-not (Get-ChildItem desktop/out/make -Recurse -Filter VertexSetup.exe)) { throw 'Missing VertexSetup.exe' }
+          Compress-Archive -Path "$appPath/*" -DestinationPath 'desktop/out/Vertex-win-x64.zip'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vertex-windows-preview
+          path: |
+            desktop/out/make/**/VertexSetup.exe
+            desktop/out/Vertex-win-x64.zip
+          if-no-files-found: error

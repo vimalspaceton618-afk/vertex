@@ -36,7 +36,7 @@ test('welcome command tips match the discoverable commands', () => {
 test('safe init and doctor are registered as CLI subcommands before application startup', () => {
   assert.ok(cli.includes("program.command('doctor')"), 'doctor CLI subcommand should exist');
   assert.ok(cli.includes("program.command('init')"), 'init CLI subcommand should exist');
-  const parseIndex = cli.indexOf('program.parse(process.argv)');
+  const parseIndex = cli.indexOf('await program.parseAsync(process.argv)');
   const guardIndex = cli.indexOf('if (!commandHandled) {');
   assert.ok(parseIndex >= 0 && guardIndex > parseIndex, 'subcommands should be parsed before normal application startup');
   assert.ok(cli.includes('ConfigManager.init();') && cli.includes('ensureScopeFile();'), 'normal application startup should still initialize config and scope');
