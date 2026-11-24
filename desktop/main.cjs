@@ -8,7 +8,11 @@ let window;
 let workspace;
 
 const installEvent = process.argv.find(arg => /^--squirrel-(install|updated|uninstall|obsolete)$/.test(arg));
-if (installEvent) {
+const ownsInstance = app.requestSingleInstanceLock();
+app.on('second-instance', () => { if (window) { if (window.isMinimized()) window.restore(); window.focus(); } });
+if (!ownsInstance) {
+  app.quit();
+} else if (installEvent) {
   if (installEvent === '--squirrel-obsolete') {
     app.quit();
   } else {
