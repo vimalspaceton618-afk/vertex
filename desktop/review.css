@@ -1,0 +1,11 @@
+:root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; background: #101318; color: #edf0f5; }
+body { max-width: 1000px; margin: auto; padding: 32px; }
+header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; border-bottom: 1px solid #353d49; padding-bottom: 16px; }
+h1 { margin: 0; font-size: 27px; }
+h2 { font-size: 16px; font-weight: 600; margin-top: 24px; }
+p { overflow-wrap: anywhere; color: #bcc7d7; }
+.actions { display: flex; gap: 8px; flex-shrink: 0; }
+button { font: inherit; padding: 8px 14px; border: 1px solid #59667a; background: #202a38; color: inherit; border-radius: 6px; cursor: pointer; }
+button:disabled { opacity: .58; cursor: default; }
+button:focus-visible { outline: 2px solid #82c7fd; outline-offset: 2px; }
+pre { padding: 14px; white-space: pre-wrap; overflow-wrap: anywhere; background: #181f28; border-radius: 6px; }

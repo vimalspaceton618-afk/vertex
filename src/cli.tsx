@@ -50,6 +50,23 @@ program.command('doctor')
     if (!report.ok) process.exitCode = 1;
   });
 
+program.command('review')
+  .description('Show staged and unstaged Git changes without modifying the repository')
+  .argument('[directory]', 'Repository root', process.cwd())
+  .action(async (directory: string) => {
+    commandHandled = true;
+    try {
+      const { reviewWorkspace } = await import('./workspace-review.cjs');
+      const result = await reviewWorkspace(directory);
+      process.stdout.write(program.opts().json
+        ? `${JSON.stringify(result, null, 2)}\n`
+        : `Status\n${result.status || 'Clean\n'}\nStaged\n${result.staged || 'None\n'}\nUnstaged\n${result.unstaged || 'None\n'}`);
+    } catch (error) {
+      process.stderr.write(`[REVIEW ERROR] ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    }
+  });
+
 program.command('init')
   .description('Create a private .env template in the current workspace without overwriting existing files')
   .action(() => {
@@ -68,7 +85,7 @@ program.command('init')
 // a root command with subcommands as a help invocation when parse() sees no arguments,
 // so only parse explicit CLI arguments; no-argument startup falls through to the UI.
 if (process.argv.length > 2) {
-  program.parse(process.argv);
+  await program.parseAsync(process.argv);
 }
 const options = program.opts();
 
