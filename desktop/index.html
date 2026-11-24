@@ -1,47 +1,28 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vertex</title>
-  <link rel="stylesheet" href="review.css">
-  <script defer src="review.js"></script>
+<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Vertex</title>
+<link rel="stylesheet" href="review.css"><script defer src="review.js"></script>
 </head>
 <body>
-  <header>
-    <div><h1>Workspace review</h1><p id="workspace">Choose a trusted Git repository to inspect local changes.</p></div>
-    <div class="actions"><button id="open">Open folder</button><button id="refresh" disabled>Refresh</button></div>
-  </header>
-  <main>
-    <section>
-      <h2>DeepSeek coding</h2>
-      <form id="coding" autocomplete="off">
-        <label>API key <input id="api-key" type="password" required maxlength="512" autocomplete="off"></label>
-        <label>Model <select id="model"><option value="deepseek-flash">Flash</option><option value="deepseek-v4-pro">Pro</option></select></label>
-        <label>Task <textarea id="task" rows="2" required maxlength="4000"></textarea></label>
-        <div class="actions">
-          <button id="choose-file" type="button">Choose workspace file</button>
-          <button id="use-paste" type="button" hidden>Use pasted code</button>
-        </div>
-        <label><span id="context-label">Source code and file paths</span> <textarea id="context" rows="6" required maxlength="32000"></textarea></label>
-        <p>The task and code shown above are sent to DeepSeek and may incur API charges. Keep secrets out of the source context.</p>
-        <button id="propose">Send to DeepSeek and propose patch</button>
-      </form>
-      <p id="coding-feedback" role="status"></p>
-      <pre id="proposal" hidden></pre>
-      <section id="edit" hidden>
-        <h3>Before</h3><pre id="before-edit"></pre>
-        <h3>After</h3><pre id="after-edit"></pre>
-        <button id="apply-edit" type="button">Apply reviewed edit</button>
-      </section>
-    </section>
-    <p id="feedback" role="status"></p>
-    <section id="results" hidden>
-      <h2>Status</h2><pre id="status"></pre>
-      <h2>Staged changes</h2><pre id="staged"></pre>
-      <h2>Unstaged changes</h2><pre id="unstaged"></pre>
-    </section>
-  </main>
-</body>
-</html>
+<aside class="sidebar"><div class="brand"><span class="logo">V</span> Vertex <small>DESKTOP</small></div>
+<button id="open" class="primary">＋ Open repository</button>
+<div class="nav-label">WORKSPACE</div><p id="workspace">No repository selected</p><button id="refresh" disabled>↻ Refresh changes</button>
+<div class="nav-label">WORKFLOW</div><ol><li>Describe the task</li><li>Review source context</li><li>Review and apply patch</li><li>Run project tests</li></ol>
+<div class="sidebar-bottom">Your engineering workspace<br><span>Local files · Reviewed changes</span></div></aside>
+<main><header><div><span class="eyebrow">VERTEX AGENT</span><h1>Build with context.</h1><p>From a repository to a reviewed, tested change.</p></div><span class="badge">DeepSeek</span></header>
+<div id="recovery" class="notice" hidden><p id="recovery-detail"></p><button id="recover">Recover interrupted patch</button></div>
+<p id="feedback" role="status" aria-live="polite">Open a Git repository to start.</p>
+<section class="card"><div class="section-title"><span class="step">01</span><h2>What are we building?</h2></div>
+<label for="task">Task</label><textarea id="task" rows="3" maxlength="4000" placeholder="Describe the change, expected behavior, and tests…"></textarea>
+<details><summary>Provider settings</summary><div class="settings"><label>DeepSeek API key<input id="api-key" type="password" maxlength="512" autocomplete="off" placeholder="Kept in memory for this session"></label><label>Model<select id="model"><option value="deepseek-flash">Flash</option><option value="deepseek-v4-pro">Pro</option></select></label></div></details>
+<button id="discover" disabled>Discover repository context →</button></section>
+<section class="card" id="context-panel" hidden><div class="section-title"><span class="step">02</span><h2>Review context</h2><span id="context-count" class="muted"></span></div>
+<p>Tracked source files ranked by task keywords. Select up to 12 files. Review the exact source payload before sending it to DeepSeek.</p>
+<div id="files" class="file-list"></div><button id="preview-context">Preview selected context</button>
+<pre id="context" hidden></pre><p class="muted">The task and selected source payload are sent to DeepSeek. API charges may apply.</p><button id="propose" class="primary" disabled>Send context and generate patch</button></section>
+<section class="card" id="patch-panel" hidden><div class="section-title"><span class="step">03</span><h2>Review changes</h2></div><div id="patches"></div><button id="apply" class="primary">Apply reviewed patch</button></section>
+<section class="card"><div class="section-title"><span class="step">04</span><h2>Verify the result</h2></div><label for="command">Project test command</label><div class="command-row"><input id="command" placeholder="e.g. npm test" maxlength="2000"><button id="test" disabled>Run with approval</button></div><p class="muted">Runs in the selected repository. Stops after 2 minutes or 512 KB of output.</p><pre id="test-output" hidden></pre></section>
+<details id="results" class="card" hidden><summary>Workspace changes</summary><h3>Status</h3><pre id="status"></pre><h3>Staged</h3><pre id="staged"></pre><h3>Unstaged</h3><pre id="unstaged"></pre></details>
+</main></body></html>

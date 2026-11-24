@@ -1,14 +1,16 @@
 {
   "name": "vertex-desktop",
   "productName": "Vertex",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Vertex workspace review",
+  "description": "Vertex desktop coding workspace",
   "author": "ARcHi",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "make": "electron-forge make"
+    "make": "electron-forge make",
+    "test": "node --test deepseek.test.cjs workspace-edit.test.cjs workflow.test.cjs",
+    "test:gui": "electron gui-smoke.cjs"
   },
   "devDependencies": {
     "electron": "45.4.1",
