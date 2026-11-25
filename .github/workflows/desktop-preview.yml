@@ -39,7 +39,7 @@ jobs:
           if (-not (Test-Path -LiteralPath "$appPath/Vertex.exe")) { throw 'Missing Vertex.exe' }
           if (-not (Get-ChildItem desktop/out/make -Recurse -Filter VertexSetup.exe)) { throw 'Missing VertexSetup.exe' }
           Compress-Archive -Path "$appPath/*" -DestinationPath 'desktop/out/Vertex-win-x64.zip'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: vertex-windows-preview
           path: |
