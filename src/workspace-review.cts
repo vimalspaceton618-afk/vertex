@@ -9,7 +9,7 @@ function cleanOutput(value: string): string {
   return stripVTControlCharacters(value).replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
 }
 
-export async function reviewWorkspace(directory: string) {
+export async function reviewWorkspace(directory: string, { stat = false }: { stat?: boolean } = {}) {
   const root = await realpath(directory);
   const env: NodeJS.ProcessEnv = { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' };
   for (const key of ['SystemRoot', 'WINDIR', 'TEMP', 'TMP']) {
@@ -38,6 +38,7 @@ export async function reviewWorkspace(directory: string) {
       throw new Error('Select the root of the Git repository.');
     }
     const diffArgs = ['diff', '--no-ext-diff', '--no-textconv', '--no-color', '--ignore-submodules=all'];
+    if (stat) diffArgs.push('--stat');
     const [status, staged, unstaged] = await Promise.all([
       git('status', '--short', '--untracked-files=normal', '--ignore-submodules=all'),
       git(...diffArgs, '--cached', '--'),

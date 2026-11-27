@@ -53,11 +53,12 @@ program.command('doctor')
 program.command('review')
   .description('Show staged and unstaged Git changes without modifying the repository')
   .argument('[directory]', 'Repository root', process.cwd())
-  .action(async (directory: string) => {
+  .option('--stat', 'Summarize changes by file without showing patch contents')
+  .action(async (directory: string, commandOptions: { stat?: boolean }) => {
     commandHandled = true;
     try {
       const { reviewWorkspace } = await import('./workspace-review.cjs');
-      const result = await reviewWorkspace(directory);
+      const result = await reviewWorkspace(directory, commandOptions);
       process.stdout.write(program.opts().json
         ? `${JSON.stringify(result, null, 2)}\n`
         : `Status\n${result.status || 'Clean\n'}\nStaged\n${result.staged || 'None\n'}\nUnstaged\n${result.unstaged || 'None\n'}`);

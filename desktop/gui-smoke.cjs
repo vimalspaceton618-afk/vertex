@@ -1,6 +1,6 @@
 // Run with Electron from the repository root. Provider and native approvals are mocked;
 // the real renderer, preload IPC, Git, file writes, and project test command execute.
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, clipboard, dialog } = require('electron');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
@@ -56,8 +56,28 @@ const { execFileSync } = require('node:child_process');
   dialog.showMessageBox = async () => ({ response:1 });
   await click('apply');
   assert.match(await fs.readFile(path.join(root,'math.cjs'),'utf8'),/a\+b/);
-  await evaluate("document.getElementById('command').value='node math.test.cjs'"); await click('test');
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('#applied-files li'), item => item.textContent).sort()"), ['math.cjs', 'math.test.cjs']);
+  assert.match(await evaluate("document.getElementById('check-status').textContent"), /No checks run/);
+  await evaluate("document.getElementById('command').value='node math.test.cjs'");
+  dialog.showMessageBox = async () => ({ response:0 });
+  await click('test');
+  dialog.showMessageBox = async () => ({ response:1 });
+  await click('test');
+  await evaluate("document.getElementById('command').value='node -e process.exitCode=1'");
+  await click('test');
+  assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('#check-history li'), item => item.textContent.split(' — ')[0])"), [
+    'Skipped (approval cancelled)', 'Passed (exit 0)', 'Failed (exit 1)',
+  ]);
+  await evaluate("document.getElementById('command').value='node math.test.cjs'");
+  await click('test');
   assert.match(await evaluate("document.getElementById('test-output').textContent"), /"exitCode": 0/);
+  await click('copy-handoff');
+  const handoff = clipboard.readText();
+  assert.match(handoff, /- math\.cjs/);
+  assert.match(handoff, /Skipped \(approval cancelled\)/);
+  assert.match(handoff, /Passed \(exit 0\)/);
+  assert.match(handoff, /Failed \(exit 1\)/);
+  assert.ok(!handoff.includes(root));
   console.log('PASS: real desktop context -> multi-file review -> approved apply -> project test. Provider and dialogs mocked.');
   win.destroy(); await fs.rm(root,{recursive:true,force:true}); app.exit(0);
 })().catch(error=>{console.error(error);app.exit(1);});

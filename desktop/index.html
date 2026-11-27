@@ -116,6 +116,13 @@
             <label for="command">TEST COMMAND</label>
             <div class="command-row"><input id="command" placeholder="npm test" maxlength="2000" spellcheck="false"><button id="test" disabled>Run with approval ↗</button></div>
             <p class="muted">Runs inside the selected repository. Limited to 2 minutes and 512 KB of output.</p>
+            <section id="handoff" hidden aria-labelledby="handoff-title">
+              <h3 id="handoff-title">Latest applied patch</h3>
+              <ul id="applied-files"></ul>
+              <p id="check-status" aria-live="polite"></p>
+              <ul id="check-history"></ul>
+              <button id="copy-handoff" type="button">Copy handoff</button>
+            </section>
             <pre id="test-output" hidden></pre>
           </section>
 
