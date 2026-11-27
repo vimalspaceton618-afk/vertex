@@ -30,6 +30,14 @@ test('desktop and CLI share a read-only Git workspace report', async t => {
   assert.deepEqual(JSON.parse(output), result);
   assert.equal(git('status', '--short'), before);
 
+  const summaryOutput = execFileSync(process.execPath, [cli, 'review', root, '--stat', '--json'], { encoding: 'utf8' });
+  const summary = JSON.parse(summaryOutput);
+  assert.equal(summary.status, result.status);
+  assert.match(summary.staged, /example\.txt/);
+  assert.match(summary.unstaged, /example\.txt/);
+  assert.doesNotMatch(summary.staged + summary.unstaged, /staged line|unstaged line/);
+  assert.equal(git('status', '--short'), before);
+
   const nested = join(root, 'child');
   mkdirSync(nested);
   await assert.rejects(reviewWorkspace(nested), /root of the Git repository/);

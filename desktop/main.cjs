@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, safeStorage } = require('electron');
+const { app, BrowserWindow, clipboard, dialog, ipcMain, safeStorage } = require('electron');
 const { basename, dirname, join } = require('node:path');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
@@ -130,7 +130,13 @@ if (!ownsInstance) {
       const approved = plan; plan = undefined;
       await workflow.applyPlan(approved, journalFile);
       selected = []; discovered = [];
-      return true;
+      return approved.map(({ snapshot }) => snapshot.name);
+    });
+    register('review:copy-handoff', text => {
+      if (typeof text !== 'string' || !text || text.length > 262144) {
+        throw new Error('The handoff is empty or too large to copy.');
+      }
+      clipboard.writeText(text);
     });
     register('agent:test', async command => {
       if (!workspace) throw new Error('Open a repository first.');

@@ -86,6 +86,7 @@ Use this quick reference to jump to the task you want to try. These are Markdown
 
 | I want to… | Try this | Details |
 | --- | --- | --- |
+| Review local Git changes | `vertex review --stat` | [Review Git changes](#review-git-changes) |
 | Check my environment | `vertex doctor` | [First run](#first-run) |
 | Start the interactive UI | `vertex` | [Install](#install) |
 | Audit a repository | `/audit .` | [Common workflows](#common-workflows) |
@@ -204,6 +205,18 @@ From the workspace where you intend to use VERTEX:
    ```
 
 On first launch, VERTEX asks you to explicitly trust the current workspace. Grant access only to a directory you intend the agent to read or modify.
+
+## Review Git changes
+
+Run these commands from the repository root. The review is local and needs no provider key.
+
+```sh
+vertex review                 # Show status and both staged and unstaged patches
+vertex review --stat          # Show per-file summaries for staged and unstaged changes
+vertex review --stat --json   # Use the same summary in scripts
+```
+
+Untracked paths appear in the status. Vertex leaves the working tree and index unchanged.
 
 ## Common workflows
 

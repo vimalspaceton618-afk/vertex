@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('vertexReview', {
   proposeWorkspace: input => ipcRenderer.invoke('agent:propose', input),
   applyWorkspace: () => ipcRenderer.invoke('agent:apply'),
   runTest: command => ipcRenderer.invoke('agent:test', command),
+  copyHandoff: text => ipcRenderer.invoke('review:copy-handoff', text),
   recoveryStatus: () => ipcRenderer.invoke('agent:recovery-status'),
   recover: () => ipcRenderer.invoke('agent:recover'),
   choose: () => ipcRenderer.invoke('review:choose'),
