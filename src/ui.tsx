@@ -6,6 +6,7 @@ import { icons, resolveTheme } from './terminal/theme.js';
 import { ThemePicker } from './terminal/ThemePicker.js';
 import { TerminalThemeProvider, useTerminalColors } from './terminal/ThemeContext.js';
 import { parseTheme, readThemePreference, saveThemePreference, themeOptions, type ThemeName } from './terminal/theme-preference.js';
+import { addAttachments, promptWithAttachments, type Attachment } from './terminal/attachments.js';
 import { VertexPet } from './terminal/VertexPet.js';
 import path from 'path';
 import os from 'os';
@@ -17,7 +18,7 @@ import { initializeWorkspaceConfig } from './core/setup.js';
 import { describeScope } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
-import { VertexHeader, AgentStatusMonitor, PermissionPrompt, formatApprovalAction, TaskResultSummary, TerminalStatus, getTerminalLayoutWidth, type TaskLifecycleStatus } from './components.js';
+import { VertexHeader, AgentStatusMonitor, PermissionPrompt, formatApprovalAction, TerminalStatus, getTerminalLayoutWidth, type TaskLifecycleStatus } from './components.js';
 import { listWorkspaceSkills, readWorkspaceSkill } from './core/skills/SkillLoader.js';
 import { forceSafeMode, getAutonomyMode } from './core/policy/ModeControl.js';
 
@@ -69,6 +70,8 @@ function TrustGate({ trustCursor, width, short }: { trustCursor: number; width: 
 }
 
 const COMMANDS = [
+  { name: '/attach', desc: 'Add workspace files or images to your next prompt' },
+  { name: '/detach', desc: 'Remove all pending attachments' },
   { name: '/theme', desc: 'Preview and change the terminal theme' },
   { name: '/help', desc: 'Show available commands and shortcuts' },
   { name: '/clear', desc: 'Clear history' },
@@ -128,15 +131,20 @@ function ActiveStreamView({ content, role }: { content: string; role: 'user' | '
   );
 }
 
-function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queuedQueries, width, height }: { input: string, cursor: number, isStreaming: boolean, selectedSuggestionIndex: number, queuedQueries: string[], width: number, height: number }) {
+function PromptBar({ attaching, input, cursor, isStreaming, selectedSuggestionIndex, queuedQueries, width, height }: { attaching: boolean, input: string, cursor: number, isStreaming: boolean, selectedSuggestionIndex: number, queuedQueries: string[], width: number, height: number }) {
   const colors = useTerminalColors();
-  const beforeCursor = input.slice(0, cursor);
+  const previewBudget = Math.max(12, width - 4) * 3;
+  const start = promptBoundary(input, Math.max(0, cursor - previewBudget));
+  const beforeLines = input.slice(start, cursor).split('\n');
+  const beforeCursor = (start > 0 || beforeLines.length > 3 ? '…' : '') + beforeLines.slice(-3).join('\n');
   const cursorEnd = nextGrapheme(input, cursor);
   const cursorText = input.slice(cursor, cursorEnd);
   const cursorChar = cursorText && cursorText !== '\n' ? cursorText : ' ';
-  const afterCursor = input.slice(cursorText === '\n' ? cursor : cursorEnd);
+  const end = promptBoundary(input, Math.min(input.length, cursorEnd + previewBudget));
+  const afterLines = input.slice(cursorText === '\n' ? cursor : cursorEnd, end).split('\n');
+  const afterCursor = afterLines.slice(0, 3).join('\n') + (end < input.length || afterLines.length > 3 ? '…' : '');
 
-  const showSuggestions = /^\/[^\s]*$/.test(input);
+  const showSuggestions = !attaching && /^\/[^\s]*$/.test(input);
   const filteredCommands = commandSuggestions(input);
   const menuRows = Math.max(1, Math.min(width < 50 ? 3 : 6, height - 8));
   const firstVisible = Math.max(0, selectedSuggestionIndex + 1 - menuRows);
@@ -145,7 +153,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     <Box flexDirection="column" width={width}>
       {/* Input Prompt Area */}
       <Box marginTop={1} paddingX={0}>
-        <Text bold color={isStreaming ? colors.warning : colors.text}>{icons.prompt + ' '} </Text>
+        <Text bold color={isStreaming ? colors.warning : colors.text}>{attaching ? 'Files' : icons.prompt + ' '} </Text>
         {input.length > 0 ? (
           <Box>
             <Text>
@@ -182,7 +190,9 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
       {/* Dynamic Suggestions or Help */}
       <Box marginTop={0} flexDirection="column">
-        {showSuggestions ? (
+        {attaching ? (
+          <Text color={colors.muted}>Drop or paste workspace paths · Quote spaces · Enter attach · Esc back</Text>
+        ) : showSuggestions ? (
           <Box flexDirection="column" borderStyle={icons.prompt === '>' ? 'classic' : 'round'} borderColor={colors.border} paddingX={width >= 30 ? 1 : 0}>
             <Text color={colors.muted} wrap="truncate-end">COMMAND PALETTE · ↑/↓ select · Tab complete</Text>
             {filteredCommands.length > 0 ? (
@@ -210,16 +220,24 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         ) : isStreaming ? (
           <Text color={colors.warning}>RUNNING · Esc cancels current task · Enter queues the next task · {queuedQueries.length} queued</Text>
         ) : (
-          <Text color={colors.muted}>Enter run · Ctrl+J newline · / commands</Text>
+          <Text color={colors.muted}>Enter send · Tab attach · / commands</Text>
         )}
       </Box>
     </Box>
   );
 }
 
-function App() {
+type SessionReset = {
+  theme: ThemeName;
+  trustedDirectory: string;
+  agent: AgentManager | null;
+  queuedQueries: string[];
+  promptHistory: string[];
+};
+
+function App({ reset, onClear }: { reset?: SessionReset; onClear: (session: SessionReset) => void }) {
   const [startup] = useState(() => {
-    const preferred = parseTheme(process.env.VERTEX_UI_THEME) ?? readThemePreference();
+    const preferred = reset?.theme ?? parseTheme(process.env.VERTEX_UI_THEME) ?? readThemePreference();
     return {
       theme: preferred ?? 'warm-dark' as ThemeName,
       firstRun: !preferred && Boolean(process.stdin.isTTY && process.stdout.isTTY) && process.env.TERM !== 'dumb',
@@ -229,15 +247,17 @@ function App() {
   const palette = resolveTheme({ ...process.env, VERTEX_UI_THEME: theme }).colors;
   return (
     <TerminalThemeProvider value={palette}>
-      <VertexSession theme={theme} setTheme={setTheme} firstRun={startup.firstRun} />
+      <VertexSession theme={theme} setTheme={setTheme} firstRun={startup.firstRun} reset={reset} onClear={onClear} />
     </TerminalThemeProvider>
   );
 }
 
-function VertexSession({ theme, setTheme, firstRun }: {
+function VertexSession({ theme, setTheme, firstRun, reset, onClear }: {
   theme: ThemeName;
   setTheme: (theme: ThemeName) => void;
   firstRun: boolean;
+  reset?: SessionReset;
+  onClear: (session: SessionReset) => void;
 }) {
   const colors = useTerminalColors();
   const [themePicker, setThemePicker] = useState<'startup' | 'command' | null>(firstRun ? 'startup' : null);
@@ -251,27 +271,28 @@ function VertexSession({ theme, setTheme, firstRun }: {
     && process.env.VERTEX_UI_ASCII !== '1' && process.env.INK_SCREEN_READER !== 'true'
     && process.env.TERM !== 'dumb';
   const [petInteraction, setPetInteraction] = useState(0);
-  const [isTrusted, setIsTrusted] = useState(false);
+  const [isTrusted, setIsTrusted] = useState(reset?.trustedDirectory === process.cwd());
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachmentDraft, setAttachmentDraft] = useState<{ text: string; cursor: number } | null>(null);
+  const [attachmentNotice, setAttachmentNotice] = useState('');
   const [trustCursor, setTrustCursor] = useState(firstRun ? 2 : 1);
   const [input, setInput] = useState('');
   const [inputCursor, setInputCursor] = useState(0);
-  const [promptHistory, setPromptHistory] = useState<string[]>([]);
+  const [promptHistory, setPromptHistory] = useState<string[]>(reset?.promptHistory ?? []);
   const [historyCursor, setHistoryCursor] = useState<number | null>(null);
   const savedDraft = useRef({ text: '', cursor: 0 });
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [taskStage, setTaskStage] = useState<TaskLifecycleStatus | 'idle'>('idle');
   const [taskLabel, setTaskLabel] = useState('');
-  const [taskStartedAt, setTaskStartedAt] = useState(0);
-  const [taskDurationMs, setTaskDurationMs] = useState(0);
-  const [queuedQueries, setQueuedQueries] = useState<string[]>([]);
+  const [queuedQueries, setQueuedQueries] = useState<string[]>(reset?.queuedQueries ?? []);
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
   const nextApprovalId = useRef(0);
   const [autoApproveTools] = useState(false);
 
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
 
-  const orchestratorRef = useRef<AgentManager | null>(null);
+  const orchestratorRef = useRef<AgentManager | null>(reset?.agent ?? null);
   const getOrchestrator = async (): Promise<AgentManager> => {
     if (orchestratorRef.current) return orchestratorRef.current;
     const { AgentManager } = await import('./core/agent/AgentManager.js');
@@ -298,7 +319,7 @@ function VertexSession({ theme, setTheme, firstRun }: {
     if (!isStreaming && queuedQueries.length > 0) {
       const [nextQuery, ...remaining] = queuedQueries;
       setQueuedQueries(remaining);
-      handlePrompt(nextQuery);
+      handlePrompt(nextQuery, remaining);
     }
   }, [isStreaming, queuedQueries]);
 
@@ -372,16 +393,13 @@ function VertexSession({ theme, setTheme, firstRun }: {
     });
   };
 
-  const runDelegatedStream = async (query: string, routedPrompt = query) => {
+  const runDelegatedStream = async (query: string, routedPrompt = query, localOnly = false) => {
     const controller = new AbortController();
-    const startedAt = Date.now();
     currentAbortController.current = controller;
     const assistantId = appendTurn(query);
     activeAssistantId.current = assistantId;
     setPromptValue('');
     setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
-    setTaskStartedAt(startedAt);
-    setTaskDurationMs(0);
     setTaskStage('starting');
     setIsStreaming(true);
 
@@ -391,8 +409,8 @@ function VertexSession({ theme, setTheme, firstRun }: {
     try {
       let useDaemon = false;
       try {
-        const statusCheck = await fetch('http://127.0.0.1:8899/status', { signal: controller.signal });
-        if (statusCheck.ok) {
+        const statusCheck = localOnly ? undefined : await fetch('http://127.0.0.1:8899/status', { signal: controller.signal });
+        if (statusCheck?.ok) {
           const json = await statusCheck.json();
           if (json && json.status === 'running') {
             useDaemon = true;
@@ -463,7 +481,6 @@ function VertexSession({ theme, setTheme, firstRun }: {
         currentAbortController.current = null;
         activeAssistantId.current = undefined;
         activePreview.current = undefined;
-        setTaskDurationMs(Date.now() - startedAt);
         setIsStreaming(false);
       }
     }
@@ -471,14 +488,11 @@ function VertexSession({ theme, setTheme, firstRun }: {
 
   const runImmediateTask = (query: string, task: () => Promise<string>) => {
     const controller = new AbortController();
-    const startedAt = Date.now();
     currentAbortController.current = controller;
     setPromptValue('');
     const assistantId = appendTurn(query);
     activeAssistantId.current = assistantId;
     setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
-    setTaskStartedAt(startedAt);
-    setTaskDurationMs(0);
     setTaskStage('starting');
     setIsStreaming(true);
     void (async () => {
@@ -501,17 +515,43 @@ function VertexSession({ theme, setTheme, firstRun }: {
         if (currentAbortController.current === controller) {
           currentAbortController.current = null;
           activeAssistantId.current = undefined;
-          setTaskDurationMs(Date.now() - startedAt);
           setIsStreaming(false);
         }
       }
     })();
   };
 
-  const handlePrompt = (query: string) => {
-    const trimmedQuery = query.trim();
-    const isShellEscape = trimmedQuery.startsWith('!') || trimmedQuery.startsWith('$');
-    const rawCmd = isShellEscape ? trimmedQuery.slice(1).trim() : trimmedQuery;
+  const clearSession = (remaining: string[]) => {
+    orchestratorRef.current?.clearHistory();
+    onClear({ theme, trustedDirectory: process.cwd(), agent: orchestratorRef.current, queuedQueries: remaining, promptHistory });
+  };
+
+  const openAttachments = (draft: string, cursor: number) => {
+    setAttachmentDraft({ text: draft, cursor });
+    setAttachmentNotice('');
+    setPromptValue('');
+  };
+
+  const closeAttachments = () => {
+    const draft = attachmentDraft;
+    setAttachmentDraft(null);
+    setAttachmentNotice('');
+    setPromptValue(draft?.text ?? '', draft?.cursor ?? 0);
+  };
+
+  const attachPaths = (paths: string) => {
+    try {
+      setAttachments(addAttachments(attachments, paths));
+      closeAttachments();
+    } catch (error) {
+      setAttachmentNotice(formatApprovalAction(error instanceof Error ? error.message : String(error)));
+    }
+  };
+
+  const handlePrompt = (draft: string, remaining: string[] = []) => {
+    const query = draft.trim();
+    const isShellEscape = query.startsWith('!') || query.startsWith('$');
+    const rawCmd = isShellEscape ? query.slice(1).trim() : query;
     const cmdTokens = rawCmd.split(/\s+/);
     const primaryCmd = cmdTokens[0]?.toLowerCase();
 
@@ -523,12 +563,7 @@ function VertexSession({ theme, setTheme, firstRun }: {
 
     if (isDirectCmd) {
       setPromptValue('');
-      if (primaryCmd === 'clear') {
-        setHistory([]);
-        orchestratorRef.current?.clearHistory();
-        process.stdout.write('\x1Bc');
-        return;
-      }
+      if (primaryCmd === 'clear') return clearSession(remaining);
       if (primaryCmd === 'cd') {
         const targetDir = cmdTokens.slice(1).join(' ').trim() || os.homedir();
         runImmediateTask(query, async () => {
@@ -536,6 +571,8 @@ function VertexSession({ theme, setTheme, firstRun }: {
             const resolved = path.resolve(process.cwd(), targetDir);
             process.chdir(resolved);
             process.env.VERTEX_WORKSPACE_ROOT = resolved;
+            setAttachments([]);
+            setAttachmentNotice('');
             return `Changed directory to: ${resolved}`;
           } catch (e: any) {
             return `[CD ERROR]: ${e.message}`;
@@ -595,7 +632,7 @@ function VertexSession({ theme, setTheme, firstRun }: {
 
     if (lowerQuery === '?' || lowerQuery === '/?') {
       setPromptValue('');
-      appendTurn(query, 'Shortcuts:\n? - Show shortcuts\n/ - List commands\nCtrl+C - Exit\nUp/Down Arrow - Navigate history\nLeft/Right Arrow - Move cursor' + (showPet ? '\nCtrl+P - Play with the Vertex pet' : ''));
+      appendTurn(query, 'Shortcuts:\n? - Show shortcuts\n/ - List commands\nTab - Attach files or images while editing\nShift+Enter - Newline in supported terminals (or paste multiline text)\nCtrl+C - Exit\nUp/Down Arrow - Navigate history\nLeft/Right Arrow - Move cursor' + (showPet ? '\nCtrl+P - Play with the Vertex pet' : ''));
       return;
     }
 
@@ -612,11 +649,19 @@ function VertexSession({ theme, setTheme, firstRun }: {
       return;
     }
 
-    if (lowerQuery === '/clear' || lowerQuery === 'clear') {
+    if (lowerQuery === '/clear' || lowerQuery === 'clear') return clearSession(remaining);
+
+    if (lowerQuery === '/detach') {
+      setAttachments([]);
+      setAttachmentNotice('');
       setPromptValue('');
-      setHistory([]);
-      orchestratorRef.current?.clearHistory();
-      process.stdout.write('\x1Bc');
+      return;
+    }
+
+    if (lowerQuery === '/attach' || /^\/attach[ \t]+/i.test(query)) {
+      const argument = query.slice('/attach'.length).trim();
+      if (argument) attachPaths(argument);
+      else openAttachments('', 0);
       return;
     }
 
@@ -994,14 +1039,20 @@ function VertexSession({ theme, setTheme, firstRun }: {
       return;
     }
 
-    void runDelegatedStream(query);
+    if (attachments.length) {
+      // Workspace-relative paths belong to this session. A daemon can have a different cwd.
+      void runDelegatedStream(draft, promptWithAttachments(draft, attachments), true);
+      setAttachments([]);
+      setAttachmentNotice('');
+    } else {
+      void runDelegatedStream(draft);
+    }
   };
 
   const submitPrompt = (value: string) => {
-    const query = value.trim();
-    if (!query || isStreaming) return;
-    pushPromptHistory(query);
-    handlePrompt(query);
+    if (!value.trim() || isStreaming) return;
+    pushPromptHistory(value);
+    handlePrompt(value);
   };
 
   const recallPromptHistory = (direction: -1 | 1) => {
@@ -1081,6 +1132,17 @@ function VertexSession({ theme, setTheme, firstRun }: {
       return;
     }
 
+    if (attachmentDraft) {
+      if (key.escape) return closeAttachments();
+      if (key.return) {
+        if (input.trim()) attachPaths(input);
+        return;
+      }
+      if (key.tab || key.upArrow || key.downArrow) return;
+    } else if (key.tab && !input.startsWith('/') && !isStreaming) {
+      return openAttachments(input, inputCursor);
+    }
+
     const showSuggestions = /^\/[^\s]*$/.test(input);
     const filteredCommands = commandSuggestions(input);
 
@@ -1105,7 +1167,7 @@ function VertexSession({ theme, setTheme, firstRun }: {
       }
       if (input.trim().length > 0) {
         if (isStreaming) {
-          const q = input.trim();
+          const q = input;
           pushPromptHistory(q);
           setQueuedQueries((prev) => [...prev, q]);
           setPromptValue('');
@@ -1240,14 +1302,6 @@ function VertexSession({ theme, setTheme, firstRun }: {
         />
       )}
 
-      {!isStreaming && taskStage !== 'idle' && taskStartedAt > 0 && (
-        <TaskResultSummary
-          status={taskStage}
-          durationMs={taskDurationMs}
-          output={history.filter((item) => item.role === 'assistant').slice(-1)[0]?.content ?? ''}
-        />
-      )}
-
       {confirmPrompt && (
         <PermissionPrompt
           key={confirmPrompt.id}
@@ -1275,8 +1329,16 @@ function VertexSession({ theme, setTheme, firstRun }: {
         <ThemePicker firstRun={false} selected={themeOptions[themeIndex].name} width={layoutWidth} rows={rows} error={themeError} />
       )}
 
+      {!themePicker && !confirmPrompt && attachments.length > 0 && (
+        <Text color={colors.muted} wrap="truncate-end">
+          {attachments.length} attached · {attachments.map(item => formatApprovalAction(item.path)).join(', ')} · /detach
+        </Text>
+      )}
+      {!themePicker && !confirmPrompt && attachmentNotice && <Text color={colors.muted}>{attachmentNotice}</Text>}
+
       {!themePicker && !confirmPrompt && (
         <PromptBar 
+          attaching={attachmentDraft !== null}
           cursor={inputCursor} 
           input={input} 
           isStreaming={isStreaming} 

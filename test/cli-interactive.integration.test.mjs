@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { attachmentProvider } from './attachment-provider-fixture.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -66,7 +67,7 @@ function waitForExit(child, timeoutMs = 5_000) {
   });
 }
 
-test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly', {
+test('interactive CLI handles commands, repeated clears, multiline drafts and file attachments', {
   timeout: 45_000
 }, async (t) => {
   const cwd = makeTempDir('vertex-tui-work-');
@@ -95,6 +96,12 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
   ]) {
     delete env[key];
   }
+
+  const provider = await attachmentProvider(t);
+  Object.assign(env, {
+    OPENAI_BASE_URL: provider.url, LOCAL_BASE_URL: provider.url, OPENAI_API_KEY: 'fixture',
+    BRAIN_MODE: 'cloud', AI_MODEL: 'text-fixture', VISION_MODEL: 'vision-fixture',
+  });
 
   const child = spawn(process.execPath, [cliPath], {
     cwd,
@@ -204,6 +211,49 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
   if (process.platform !== 'win32') {
     assert.equal(fs.statSync(path.join(cwd, '.env')).mode & 0o777, 0o600, '/init must use restrictive permissions');
   }
+
+  const image = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aK7sAAAAASUVORK5CYII=';
+  const contents = 'A marker present only in the text fixture.';
+  fs.writeFileSync(path.join(cwd, 'notes draft.md'), contents);
+  fs.writeFileSync(path.join(cwd, 'diagram.png'), Buffer.from(image, 'base64'));
+  const screenAfter = async (keys, expected) => {
+    const start = stdout.length;
+    child.stdin.write(keys);
+    await waitForOutput(child, () => stdout, expected, 8_000, start, () => stderr);
+    return stdout.slice(start);
+  };
+
+  for (const clear of ['clear', '/clear']) {
+    await typeAndSubmit('/attach "notes draft.md" diagram.png');
+    await screenAfter(clear, '❯  ' + clear);
+    const reset = await screenAfter('\r', 'Welcome to VERTEX');
+    assert.ok(reset.includes('\x1b[2J'));
+    assert.doesNotMatch(reset.slice(reset.lastIndexOf('\x1b[2J')), /TASK SUMMARY|2 attached|Trust this workspace/);
+  }
+
+  const draft = '  Compare these fixtures.\n' + 'middle line\n'.repeat(400) + 'end marker  \n';
+  const newline = draft.indexOf('\n');
+  await screenAfter(draft.slice(0, newline), 'Compare these fixtures.');
+  await screenAfter('\x1b[13;2u', 'Enter send');
+  const preview = await screenAfter('\x1b[200~' + draft.slice(newline + 1) + '\x1b[201~', 'end marker');
+  assert.ok(!preview.includes('Compare these fixtures'), 'long paste should have a compact preview');
+  await screenAfter('\t', 'Drop or paste workspace paths');
+  await screenAfter('\x1b', 'end marker');
+  await screenAfter('\t', 'Drop or paste workspace paths');
+  await screenAfter('"notes draft.md" diagram.png', 'diagram.png');
+  await screenAfter('\r', '2 attached');
+  assert.equal(provider.requests.length, 0, 'paste and attachment selection must never submit the draft');
+  await screenAfter('\r', 'Attachment scenario complete');
+  assert.equal(provider.requests.length, 5);
+  const firstPrompt = provider.requests[0].messages.at(-1).content;
+  assert.ok(firstPrompt.startsWith(draft + '\n\nUser-selected workspace attachments'), 'submit should preserve every character');
+  assert.ok(firstPrompt.includes('"path":"notes draft.md"') && firstPrompt.includes('"path":"diagram.png"'));
+  const vision = provider.requests.find(body => body.model === 'vision-fixture');
+  assert.equal(vision.messages[0].content[1].image_url.url, 'data:image/png;base64,' + image);
+  const tools = provider.requests.flatMap(body => body.messages.filter(message => message.role === 'tool'));
+  assert.ok(tools.some(message => message.name === 'read_file' && message.content === contents));
+  assert.ok(tools.some(message => message.name === 'analyze_image' && message.content === 'Image fixture received'));
+  assert.doesNotMatch(stdout, /TASK SUMMARY|Based on returned text/);
 
   await typeAndSubmit('/exit');
   assert.equal(await waitForExit(child), 0, stderr);

@@ -76,7 +76,7 @@ test('every advertised TUI command has a dispatch path', () => {
   const registry = uiSource.match(/const COMMANDS = \[([\s\S]*?)\n\];/);
   assert.ok(registry, 'the interactive UI command registry exists');
   const commandNames = [...registry[1].matchAll(/name:\s*'([^']+)'/g)].map((match) => match[1]);
-  const dispatchStart = uiSource.indexOf('const handlePrompt = (query: string) => {');
+  const dispatchStart = uiSource.indexOf('const handlePrompt = ');
   const dispatchEnd = uiSource.indexOf('const submitPrompt = (value: string) => {', dispatchStart);
   assert.ok(dispatchStart >= 0 && dispatchEnd > dispatchStart, 'the prompt dispatcher exists');
   const dispatch = uiSource.slice(dispatchStart, dispatchEnd);
@@ -100,7 +100,7 @@ test('no-argument launch remains wired to the interactive Ink UI', () => {
     'no-argument launch must skip Commander parsing so the TUI can start'
   );
   assert.ok(
-    cliSource.includes('const { waitUntilExit } = render(<App />, { incrementalRendering: nativeTerminal });'),
+    /render\(<App reset=\{reset\}/.test(cliSource) && cliSource.includes('await instance.waitUntilExit();'),
     'the no-argument path must render the interactive UI and wait for exit'
   );
 });

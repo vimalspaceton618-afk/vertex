@@ -359,9 +359,22 @@ if (options.daemon) {
   import('./ui.js').finally(() => {
     if (dotenvQuiet === undefined) delete process.env.DOTENV_CONFIG_QUIET;
     else process.env.DOTENV_CONFIG_QUIET = dotenvQuiet;
-  }).then(({ default: App }) => {
-    const { waitUntilExit } = render(<App />, { incrementalRendering: nativeTerminal });
-    return waitUntilExit();
+  }).then(async ({ default: App }) => {
+    let reset: Parameters<typeof App>[0]['reset'];
+    let clearing: boolean;
+    do {
+      clearing = false;
+      const instance = render(<App reset={reset} onClear={session => {
+        reset = session;
+        clearing = true;
+        instance.unmount();
+      }} />, { incrementalRendering: nativeTerminal });
+      await instance.waitUntilExit();
+      if (clearing) {
+        // Clear scrollback and viewport without resetting terminal modes.
+        if (process.stdout.isTTY) process.stdout.write('\x1b[3J\x1b[2J\x1b[H');
+      }
+    } while (clearing);
   }).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
     process.stderr.write(`[UI START ERROR] ${message}\n`);
