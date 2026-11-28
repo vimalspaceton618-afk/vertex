@@ -8,6 +8,7 @@ import { collectDiagnostics, formatDiagnosticReport } from './core/diagnostics.j
 import { initializeWorkspaceConfig } from './core/setup.js';
 import { collectHealthStatus, formatHealthReport } from './core/health.js';
 import { describeScope, ensureScopeFile } from './core/policy/PolicyEngine.js';
+const nativeTerminal = Boolean(process.stdout.isTTY);
 if (process.env.MOCK_TTY === '1' || process.env.MOCK_TTY === 'true') {
   if (process.stdin) {
     process.stdin.isTTY = true;
@@ -353,12 +354,17 @@ if (options.daemon) {
 } else if (commandHandled) {
   // The init/doctor subcommand completed during Commander parsing.
 } else {
-  import('./ui.js').then(({ default: App }) => {
-    const { waitUntilExit } = render(<App />);
+  const dotenvQuiet = process.env.DOTENV_CONFIG_QUIET;
+  process.env.DOTENV_CONFIG_QUIET = 'true';
+  import('./ui.js').finally(() => {
+    if (dotenvQuiet === undefined) delete process.env.DOTENV_CONFIG_QUIET;
+    else process.env.DOTENV_CONFIG_QUIET = dotenvQuiet;
+  }).then(({ default: App }) => {
+    const { waitUntilExit } = render(<App />, { incrementalRendering: nativeTerminal });
     return waitUntilExit();
   }).catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`[UI START ERROR]: ${message}\\n`);
+    process.stderr.write(`[UI START ERROR] ${message}\n`);
     process.exitCode = 1;
   });
 }

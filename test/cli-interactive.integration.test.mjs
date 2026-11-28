@@ -14,7 +14,10 @@ function makeTempDir(prefix) {
 }
 
 function waitForOutput(child, getOutput, needle, timeoutMs = 10_000, startIndex = 0, getErrorOutput = () => '') {
-  if (getOutput().slice(startIndex).includes(needle)) return Promise.resolve();
+  const matches = () => typeof needle === 'string'
+    ? getOutput().slice(startIndex).includes(needle)
+    : needle.test(getOutput().slice(startIndex));
+  if (matches()) return Promise.resolve();
 
   return new Promise((resolve, reject) => {
     const cleanup = () => {
@@ -28,7 +31,7 @@ function waitForOutput(child, getOutput, needle, timeoutMs = 10_000, startIndex 
       reject(new Error(message));
     };
     const onData = () => {
-      if (getOutput().slice(startIndex).includes(needle)) {
+      if (matches()) {
         cleanup();
         resolve();
       }
@@ -86,7 +89,9 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
     'BRAIN_MODE',
     'LOCAL_MODEL',
     'LOCAL_BASE_URL',
-    'WORKSPACE_ROOT'
+    'WORKSPACE_ROOT',
+    'VERTEX_UI_THEME',
+    'VERTEX_UI_ASCII'
   ]) {
     delete env[key];
   }
@@ -118,11 +123,36 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
     fs.rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
 
-  await waitForOutput(child, () => stdout, 'Trust this workspace', 10_000, 0, () => stderr);
+  await waitForOutput(child, () => stdout, 'Choose a theme', 10_000, 0, () => stderr);
+  assert.doesNotMatch(stdout, /injected env/i, 'interactive startup should stay clear of dotenv banners');
+  child.stdin.write('2');
+  await waitForOutput(child, () => stdout, '❯ 2. Warm light', 8_000, 0, () => stderr);
+  child.stdin.write('\r');
+  await waitForOutput(child, () => stdout, 'Trust this workspace', 8_000, 0, () => stderr);
+  assert.equal(fs.readFileSync(path.join(home, '.vertex-ui-theme'), 'utf8'), 'warm-light\n');
+  const beforeTrust = stdout.length;
   child.stdin.write('1');
-  await waitForOutput(child, () => stdout, 'Welcome to VERTEX');
+  await waitForOutput(child, () => stdout, 'Welcome to VERTEX', 8_000, beforeTrust, () => stderr);
 
-  child.stdin.write('/help\r');
+  async function typeAndSubmit(command) {
+    const before = stdout.length;
+    child.stdin.write(command);
+    await waitForOutput(child, () => stdout, '❯  ' + command, 8_000, before, () => stderr);
+    const beforeSubmit = stdout.length;
+    child.stdin.write('\r');
+    if (command !== '/exit') {
+      await waitForOutput(child, () => stdout, /\n❯[ \t]*\r?\n/, 8_000, beforeSubmit, () => stderr);
+    }
+  }
+
+  const beforeDraft = stdout.length;
+  child.stdin.write('/hel');
+  await waitForOutput(child, () => stdout, '❯  /hel', 8_000, beforeDraft, () => stderr);
+  const beforeCompletion = stdout.length;
+  child.stdin.write('\t');
+  await waitForOutput(child, () => stdout, '❯  /help', 8_000, beforeCompletion, () => stderr);
+  assert.ok(!stdout.includes('VERTEX COMMANDS'), 'Tab completion must not execute help');
+  child.stdin.write('\r');
   await waitForOutput(child, () => stdout, 'VERTEX COMMANDS');
 
   for (const command of ['/health', '/doctor', '/init', '/scope', '/sandbox', '/safe-sandbox', '/audit', '/search', '/gpu', '/skill']) {
@@ -146,7 +176,7 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
   ];
   for (const [command, expected] of safeCommands) {
     const before = stdout.length;
-    child.stdin.write(command + String.fromCharCode(13));
+    await typeAndSubmit(command);
     await waitForOutput(child, () => stdout, expected, 8_000, before);
   }
 
@@ -166,7 +196,7 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
   ];
   for (const [command, expected] of missingArguments) {
     const before = stdout.length;
-    child.stdin.write(command + String.fromCharCode(13));
+    await typeAndSubmit(command);
     await waitForOutput(child, () => stdout, expected, 8_000, before);
   }
 
@@ -175,6 +205,6 @@ test('no-argument CLI renders the interactive TUI, opens help, and exits cleanly
     assert.equal(fs.statSync(path.join(cwd, '.env')).mode & 0o777, 0o600, '/init must use restrictive permissions');
   }
 
-  child.stdin.write('/exit\r');
+  await typeAndSubmit('/exit');
   assert.equal(await waitForExit(child), 0, stderr);
 });

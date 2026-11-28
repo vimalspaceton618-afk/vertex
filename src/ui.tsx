@@ -1,5 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Text, useApp, useInput, useStdout, Static } from 'ink';
+import { Box, Text, useApp, useInput, usePaste, useWindowSize, Static, type Key } from 'ink';
+import { createStreamPreview } from './terminal/stream-preview.js';
+import { nextGrapheme, normalizePaste, previousGrapheme, promptBoundary } from './terminal/prompt-text.js';
+import { icons, resolveTheme } from './terminal/theme.js';
+import { ThemePicker } from './terminal/ThemePicker.js';
+import { TerminalThemeProvider, useTerminalColors } from './terminal/ThemeContext.js';
+import { parseTheme, readThemePreference, saveThemePreference, themeOptions, type ThemeName } from './terminal/theme-preference.js';
+import { VertexPet } from './terminal/VertexPet.js';
 import path from 'path';
 import os from 'os';
 import type { AgentManager } from './core/agent/AgentManager.js';
@@ -10,32 +17,50 @@ import { initializeWorkspaceConfig } from './core/setup.js';
 import { describeScope } from './core/policy/PolicyEngine.js';
 import { SafetyResearchSandboxTool } from './tools/DockerSandbox.js';
 import { BrowserAgent } from './agents/BrowserAgent.js';
-import { VertexHeader, AgentStatusMonitor, PermissionPrompt, TaskResultSummary, getTerminalLayoutWidth, type TaskLifecycleStatus } from './components.js';
+import { VertexHeader, AgentStatusMonitor, PermissionPrompt, formatApprovalAction, TaskResultSummary, TerminalStatus, getTerminalLayoutWidth, type TaskLifecycleStatus } from './components.js';
 import { listWorkspaceSkills, readWorkspaceSkill } from './core/skills/SkillLoader.js';
 import { forceSafeMode, getAutonomyMode } from './core/policy/ModeControl.js';
 
 type HistoryMessage = { id: string; role: 'user' | 'assistant'; content: string };
-type ConfirmPrompt = { message: string; resolve: (value: boolean) => void };
+const welcomeBlock = { id: 'welcome', role: 'welcome' } as const;
+
+type ConfirmPrompt = { id: number; message: string; resolve: (value: boolean) => void };
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function TrustGate({ trustCursor, width }: { trustCursor: number; width: number }) {
+function TrustGate({ trustCursor, width, short }: { trustCursor: number; width: number; short: boolean }) {
+  const colors = useTerminalColors();
+  if (short || width < 40) {
+    return (
+      <Box flexDirection="column" width={width}>
+        <Text color={colors.accent} bold>Workspace trust</Text>
+        <Text>Allow Vertex to read and write this folder and its subdirectories?</Text>
+        <Text color={trustCursor === 1 ? colors.accent : colors.muted}>
+          {trustCursor === 1 ? '> ' : '  '}1. Trust this workspace
+        </Text>
+        <Text color={trustCursor === 2 ? colors.accent : colors.muted}>
+          {trustCursor === 2 ? '> ' : '  '}2. Exit
+        </Text>
+      </Box>
+    );
+  }
+
   return (
-    <Box flexDirection="column" width={width} padding={1} borderStyle="round" borderColor="dim">
-      <Text color="cyan" bold>VERTEX ISOLATION WARNING</Text>
+    <Box flexDirection="column" width={width} padding={1} borderStyle="round" borderColor={colors.border}>
+      <Text color={colors.accent} bold>VERTEX ISOLATION WARNING</Text>
       <Box marginY={1}>
-        <Text dimColor>
+        <Text color={colors.muted}>
           Vertex requires explicit trust to operate in this directory.
           If granted, Vertex will have read/write access to this folder and subdirectories.
         </Text>
       </Box>
       <Box flexDirection="column">
-        <Text color={trustCursor === 1 ? 'cyan' : 'dim'}>
+        <Text color={trustCursor === 1 ? colors.accent : colors.muted}>
           {trustCursor === 1 ? '> ' : '  '}1. Trust this workspace (Enable full access)
         </Text>
-        <Text color={trustCursor === 2 ? 'cyan' : 'dim'}>
+        <Text color={trustCursor === 2 ? colors.accent : colors.muted}>
           {trustCursor === 2 ? '> ' : '  '}2. Exit
         </Text>
       </Box>
@@ -44,6 +69,7 @@ function TrustGate({ trustCursor, width }: { trustCursor: number; width: number 
 }
 
 const COMMANDS = [
+  { name: '/theme', desc: 'Preview and change the terminal theme' },
   { name: '/help', desc: 'Show available commands and shortcuts' },
   { name: '/clear', desc: 'Clear history' },
   { name: '/health', desc: 'System status report' },
@@ -74,7 +100,14 @@ const COMMANDS = [
   { name: '/gpu', desc: 'Manage GPU jobs: /gpu <action>' }
 ];
 
+function commandSuggestions(draft: string) {
+  return /^\/[a-z0-9_-]*$/i.test(draft)
+    ? COMMANDS.filter(command => command.name.startsWith(draft.toLowerCase()))
+    : [];
+}
+
 function ActiveStreamView({ content, role }: { content: string; role: 'user' | 'assistant' }) {
+  const colors = useTerminalColors();
   const MAX_STREAM_LINES = 15;
   const lines = content.split('\n');
   const isTruncated = lines.length > MAX_STREAM_LINES;
@@ -84,43 +117,46 @@ function ActiveStreamView({ content, role }: { content: string; role: 'user' | '
   return (
     <Box marginY={1} flexDirection="column">
       {isTruncated && (
-        <Text color="gray" italic>
+        <Text color={colors.muted} italic>
           [... {lines.length - MAX_STREAM_LINES} lines active stream ... ]
         </Text>
       )}
-      <Text color={role === 'user' ? 'cyan' : 'white'} dimColor={role === 'assistant'}>
+      <Text color={role === 'user' ? colors.accent : colors.text}>
         {role === 'user' ? '> ' : ''}{displayContent}
       </Text>
     </Box>
   );
 }
 
-function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queuedQueries, width }: { input: string, cursor: number, isStreaming: boolean, selectedSuggestionIndex: number, queuedQueries: string[], width: number }) {
+function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queuedQueries, width, height }: { input: string, cursor: number, isStreaming: boolean, selectedSuggestionIndex: number, queuedQueries: string[], width: number, height: number }) {
+  const colors = useTerminalColors();
   const beforeCursor = input.slice(0, cursor);
-  const cursorChar = input[cursor] || ' ';
-  const afterCursor = input.slice(cursor + 1);
+  const cursorEnd = nextGrapheme(input, cursor);
+  const cursorText = input.slice(cursor, cursorEnd);
+  const cursorChar = cursorText && cursorText !== '\n' ? cursorText : ' ';
+  const afterCursor = input.slice(cursorText === '\n' ? cursor : cursorEnd);
 
-  const showSuggestions = input.startsWith('/') && !input.includes(' ');
-  const filteredCommands = showSuggestions 
-    ? COMMANDS.filter(cmd => cmd.name.startsWith(input.toLowerCase()))
-    : [];
+  const showSuggestions = /^\/[^\s]*$/.test(input);
+  const filteredCommands = commandSuggestions(input);
+  const menuRows = Math.max(1, Math.min(width < 50 ? 3 : 6, height - 8));
+  const firstVisible = Math.max(0, selectedSuggestionIndex + 1 - menuRows);
 
   return (
     <Box flexDirection="column" width={width}>
       {/* Input Prompt Area */}
       <Box marginTop={1} paddingX={0}>
-        <Text bold color={isStreaming ? "yellow" : "white"}>{'> '} </Text>
+        <Text bold color={isStreaming ? colors.warning : colors.text}>{icons.prompt + ' '} </Text>
         {input.length > 0 ? (
           <Box>
             <Text>
               <Text>{beforeCursor}</Text>
-              <Text backgroundColor="cyan" color="black">{cursorChar}</Text>
+              <Text inverse>{cursorChar}</Text>
               <Text>{afterCursor}</Text>
             </Text>
           </Box>
         ) : (
           <Box>
-            <Text backgroundColor="cyan" color="black"> </Text>
+            <Text inverse> </Text>
           </Box>
         )}
       </Box>
@@ -128,11 +164,11 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       {/* Queued queries badge */}
       {queuedQueries.length > 0 && (
         <Box marginTop={0} flexDirection="column">
-          <Text color="yellow" bold>
+          <Text color={colors.warning} bold>
             [Queued in waiting ({queuedQueries.length})]:
           </Text>
           {queuedQueries.map((q, idx) => (
-            <Text key={`queued-${idx}-${q.slice(0, 10)}`} color="dim">
+            <Text key={`queued-${idx}-${q.slice(0, 10)}`} color={colors.muted}>
               {"  "}{idx + 1}. {q.length > 110 ? `${q.slice(0, 107)}…` : q}
             </Text>
           ))}
@@ -141,53 +177,87 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
       {/* Bottom Divider */}
       <Box marginTop={0}>
-        <Text color="gray">{"─".repeat(Math.max(1, width - 1))}</Text>
+        <Text color={colors.muted}>{icons.separator.repeat(Math.max(1, width - 1))}</Text>
       </Box>
 
       {/* Dynamic Suggestions or Help */}
       <Box marginTop={0} flexDirection="column">
         {showSuggestions ? (
-          <Box flexDirection="column">
-            <Text color="gray">COMMAND PALETTE · {filteredCommands.length} match{filteredCommands.length === 1 ? '' : 'es'} · Tab/↑/↓ to select</Text>
+          <Box flexDirection="column" borderStyle={icons.prompt === '>' ? 'classic' : 'round'} borderColor={colors.border} paddingX={width >= 30 ? 1 : 0}>
+            <Text color={colors.muted} wrap="truncate-end">COMMAND PALETTE · ↑/↓ select · Tab complete</Text>
             {filteredCommands.length > 0 ? (
-              filteredCommands.map((cmd, idx) => (
-                <Box key={cmd.name} flexDirection="row">
-                  <Box width={20}>
-                    <Text color={idx === selectedSuggestionIndex ? 'green' : 'cyan'} bold={idx === selectedSuggestionIndex}>
-                      {idx === selectedSuggestionIndex ? '› ' : '  '}{cmd.name}
-                    </Text>
+              filteredCommands.slice(firstVisible, firstVisible + menuRows).map((cmd, index) => {
+                const idx = index + firstVisible;
+                return (
+                  <Box key={cmd.name} flexDirection="row">
+                    <Box width={20}>
+                      <Text color={idx === selectedSuggestionIndex ? colors.success : colors.accent} bold={idx === selectedSuggestionIndex}>
+                        {idx === selectedSuggestionIndex ? '› ' : '  '}{cmd.name}
+                      </Text>
+                    </Box>
+                    {width >= 50 && <Box flexGrow={1}>
+                      <Text color={idx === selectedSuggestionIndex ? colors.text : colors.muted} wrap="truncate-end">{cmd.desc}</Text>
+                    </Box>}
                   </Box>
-                  <Box flexGrow={1}>
-                    <Text color={idx === selectedSuggestionIndex ? 'white' : 'gray'}>{cmd.desc}</Text>
-                  </Box>
-                </Box>
-              ))
+                );
+              })
             ) : (
-              <Text color="yellow">No command matches “{input}”. Try /help to see available commands.</Text>
+              <Text color={colors.warning}>No command matches “{input}”. Try /help to see available commands.</Text>
             )}
           </Box>
         ) : input.startsWith('?') ? (
-          <Text color="cyan">KEYBOARD · Enter run · Tab/↑/↓ select command · ↑/↓ history · ←/→ edit · Ctrl+A/E start/end · Ctrl+U clear · Esc cancel/clear · Ctrl+C exit</Text>
+          <Text color={colors.accent}>KEYBOARD · Enter run · Tab/↑/↓ select command · ↑/↓ history · ←/→ edit · Ctrl+A/E start/end · Ctrl+U clear · Esc cancel/clear · Ctrl+C exit</Text>
         ) : isStreaming ? (
-          <Text color="yellow">RUNNING · Esc cancels current task · Enter queues the next task · {queuedQueries.length} queued</Text>
+          <Text color={colors.warning}>RUNNING · Esc cancels current task · Enter queues the next task · {queuedQueries.length} queued</Text>
         ) : (
-          <Text color="gray">Enter run · / commands · ? shortcuts · ↑ history · Esc clear input · Ctrl+C exit</Text>
+          <Text color={colors.muted}>Enter run · Ctrl+J newline · / commands</Text>
         )}
       </Box>
     </Box>
   );
 }
 
-  const App = () => {
+function App() {
+  const [startup] = useState(() => {
+    const preferred = parseTheme(process.env.VERTEX_UI_THEME) ?? readThemePreference();
+    return {
+      theme: preferred ?? 'warm-dark' as ThemeName,
+      firstRun: !preferred && Boolean(process.stdin.isTTY && process.stdout.isTTY) && process.env.TERM !== 'dumb',
+    };
+  });
+  const [theme, setTheme] = useState(startup.theme);
+  const palette = resolveTheme({ ...process.env, VERTEX_UI_THEME: theme }).colors;
+  return (
+    <TerminalThemeProvider value={palette}>
+      <VertexSession theme={theme} setTheme={setTheme} firstRun={startup.firstRun} />
+    </TerminalThemeProvider>
+  );
+}
+
+function VertexSession({ theme, setTheme, firstRun }: {
+  theme: ThemeName;
+  setTheme: (theme: ThemeName) => void;
+  firstRun: boolean;
+}) {
+  const colors = useTerminalColors();
+  const [themePicker, setThemePicker] = useState<'startup' | 'command' | null>(firstRun ? 'startup' : null);
+  const [themeIndex, setThemeIndex] = useState(() => themeOptions.findIndex(option => option.name === theme));
+  const [themeError, setThemeError] = useState<string>();
   const { exit } = useApp();
-  const { stdout } = useStdout();
-  const layoutWidth = getTerminalLayoutWidth(stdout.columns);
+  const { columns, rows } = useWindowSize();
+  const layoutWidth = getTerminalLayoutWidth(columns);
+  const short = rows < 12;
+  const showPet = columns >= 50 && rows >= 18 && process.env.VERTEX_UI_PET !== '0'
+    && process.env.VERTEX_UI_ASCII !== '1' && process.env.INK_SCREEN_READER !== 'true'
+    && process.env.TERM !== 'dumb';
+  const [petInteraction, setPetInteraction] = useState(0);
   const [isTrusted, setIsTrusted] = useState(false);
-  const [trustCursor, setTrustCursor] = useState(1);
+  const [trustCursor, setTrustCursor] = useState(firstRun ? 2 : 1);
   const [input, setInput] = useState('');
   const [inputCursor, setInputCursor] = useState(0);
   const [promptHistory, setPromptHistory] = useState<string[]>([]);
   const [historyCursor, setHistoryCursor] = useState<number | null>(null);
+  const savedDraft = useRef({ text: '', cursor: 0 });
   const [history, setHistory] = useState<HistoryMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [taskStage, setTaskStage] = useState<TaskLifecycleStatus | 'idle'>('idle');
@@ -196,6 +266,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   const [taskDurationMs, setTaskDurationMs] = useState(0);
   const [queuedQueries, setQueuedQueries] = useState<string[]>([]);
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null);
+  const nextApprovalId = useRef(0);
   const [autoApproveTools] = useState(false);
 
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(0);
@@ -210,6 +281,10 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   };
   const autoApproveToolsRef = useRef(false);
   const currentAbortController = useRef<AbortController | null>(null);
+  const activeAssistantId = useRef<string | undefined>(undefined);
+  const activePreview = useRef<ReturnType<typeof createStreamPreview> | undefined>(undefined);
+
+  useEffect(() => () => activePreview.current?.cancel(), []);
 
   useEffect(() => {
     autoApproveToolsRef.current = autoApproveTools;
@@ -232,16 +307,22 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       currentAbortController.current.abort();
       currentAbortController.current = null;
     }
+    activePreview.current?.flush();
+    activePreview.current = undefined;
+    const assistantId = activeAssistantId.current;
+    if (assistantId) {
+      updateAssistant(assistantId, text => [text, '[CANCELLED: Task interrupted by user via Esc]'].filter(Boolean).join('\n'));
+    }
+    activeAssistantId.current = undefined;
     setQueuedQueries([]);
     setTaskStage('cancelled');
     setTaskLabel('Task cancelled by user');
     setIsStreaming(false);
-    updateLastAssistant('[CANCELLED: Task interrupted by user via Esc]');
   };
 
   const setPromptValue = (value: string, cursor = value.length) => {
     setInput(value);
-    setInputCursor(clamp(cursor, 0, value.length));
+    setInputCursor(promptBoundary(value, clamp(cursor, 0, value.length)));
   };
 
   const pushPromptHistory = (query: string) => {
@@ -260,38 +341,20 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       { id: userMsgId, role: 'user', content: query },
       { id: assistantMsgId, role: 'assistant', content: response }
     ]);
+    return assistantMsgId;
   };
 
-  const updateLastAssistant = (content: string) => {
-    setHistory((previous) => {
-      const updated = [...previous];
-      if (updated.length > 0) {
-        const last = updated[updated.length - 1];
-        updated[updated.length - 1] = { ...last, content };
-      }
+  const updateAssistant = (id: string, update: string | ((text: string) => string)) => {
+    setHistory(previous => {
+      const index = previous.findIndex(message => message.id === id);
+      if (index < 0) return previous;
+      const message = previous[index];
+      const content = typeof update === 'string' ? update : update(message.content);
+      if (message.content === content) return previous;
+      const updated = previous.slice();
+      updated[index] = { ...message, content };
       return updated;
     });
-  };
-
-  const lastUpdateMs = useRef(0);
-  const pendingUpdateTimer = useRef<NodeJS.Timeout | null>(null);
-
-  const updateLastAssistantThrottled = (content: string, force = false) => {
-    const now = Date.now();
-    if (force || now - lastUpdateMs.current >= 45) {
-      if (pendingUpdateTimer.current) {
-        clearTimeout(pendingUpdateTimer.current);
-        pendingUpdateTimer.current = null;
-      }
-      lastUpdateMs.current = now;
-      updateLastAssistant(content);
-    } else if (!pendingUpdateTimer.current) {
-      pendingUpdateTimer.current = setTimeout(() => {
-        lastUpdateMs.current = Date.now();
-        pendingUpdateTimer.current = null;
-        updateLastAssistant(content);
-      }, 45 - (now - lastUpdateMs.current));
-    }
   };
 
   const makeConfirm = () => (message: string) => {
@@ -300,6 +363,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     }
     return new Promise<boolean>((resolve) => {
       setConfirmPrompt({
+        id: ++nextApprovalId.current,
         message,
         resolve: (value) => {
           resolve(value);
@@ -312,7 +376,8 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     const controller = new AbortController();
     const startedAt = Date.now();
     currentAbortController.current = controller;
-    appendTurn(query);
+    const assistantId = appendTurn(query);
+    activeAssistantId.current = assistantId;
     setPromptValue('');
     setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
     setTaskStartedAt(startedAt);
@@ -320,6 +385,8 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     setTaskStage('starting');
     setIsStreaming(true);
 
+    const preview = createStreamPreview(text => updateAssistant(assistantId, text));
+    activePreview.current = preview;
     let fullText = '';
     try {
       let useDaemon = false;
@@ -335,6 +402,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         // Silent fallback
       }
 
+      if (controller.signal.aborted) return;
       setTaskStage('running');
       if (useDaemon) {
         const response = await fetch('http://127.0.0.1:8899/run', {
@@ -355,15 +423,20 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
           if (done || controller.signal.aborted) break;
           const chunk = decoder.decode(value, { stream: true });
           fullText += chunk;
-          updateLastAssistantThrottled(fullText);
+          preview.update(fullText);
         }
+        if (!controller.signal.aborted) fullText += decoder.decode();
       } else {
         const orchestrator = await getOrchestrator();
-        const stream = orchestrator.delegateTask(routedPrompt, makeConfirm(), controller.signal);
+        const stream = orchestrator.delegateTask(routedPrompt, message => {
+          if (controller.signal.aborted) return Promise.resolve(false);
+          preview.flush();
+          return makeConfirm()(message);
+        }, controller.signal);
         for await (const chunk of stream) {
           if (controller.signal.aborted) break;
           fullText += chunk;
-          updateLastAssistantThrottled(fullText);
+          preview.update(fullText);
         }
         if (!controller.signal.aborted) {
           orchestrator.recordTurn(query, fullText);
@@ -371,25 +444,28 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       }
       if (!controller.signal.aborted) setTaskStage('completed');
     } catch (error: any) {
-      if (error.name === 'AbortError' || controller.signal.aborted) {
-        fullText += '\n[CANCELLED: Task interrupted by user via Esc]';
-        setTaskStage('cancelled');
-        setTaskLabel('Task cancelled by user');
-        updateLastAssistantThrottled(fullText, true);
-      } else {
-        const message = error instanceof Error ? error.message : String(error);
-        fullText = `[VERTEX ERROR] ${message}`;
-        setTaskStage('failed');
-        setTaskLabel(message.length > 72 ? message.slice(0, 69) + '…' : message);
-        updateLastAssistantThrottled(fullText, true);
+      if (currentAbortController.current === controller) {
+        if (error.name === 'AbortError' || controller.signal.aborted) {
+          fullText += '\n[CANCELLED: Task interrupted by user via Esc]';
+          setTaskStage('cancelled');
+          setTaskLabel('Task cancelled by user');
+        } else {
+          const message = error instanceof Error ? error.message : String(error);
+          fullText = [fullText, `[VERTEX ERROR] ${message}`].filter(Boolean).join('\n');
+          setTaskStage('failed');
+          setTaskLabel(message.length > 72 ? message.slice(0, 69) + '…' : message);
+        }
       }
     } finally {
+      preview.cancel();
       if (currentAbortController.current === controller) {
+        updateAssistant(assistantId, fullText);
         currentAbortController.current = null;
+        activeAssistantId.current = undefined;
+        activePreview.current = undefined;
+        setTaskDurationMs(Date.now() - startedAt);
+        setIsStreaming(false);
       }
-      updateLastAssistantThrottled(fullText, true);
-      setTaskDurationMs(Date.now() - startedAt);
-      setIsStreaming(false);
     }
   };
 
@@ -398,7 +474,8 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     const startedAt = Date.now();
     currentAbortController.current = controller;
     setPromptValue('');
-    appendTurn(query);
+    const assistantId = appendTurn(query);
+    activeAssistantId.current = assistantId;
     setTaskLabel(query.length > 72 ? query.slice(0, 69) + '…' : query);
     setTaskStartedAt(startedAt);
     setTaskDurationMs(0);
@@ -409,26 +486,24 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         setTaskStage('running');
         const result = await task();
         if (!controller.signal.aborted) {
-          updateLastAssistant(result);
+          updateAssistant(assistantId, result);
           orchestratorRef.current?.recordTurn(query, result);
           setTaskStage('completed');
-        } else {
-          setTaskStage('cancelled');
-          setTaskLabel('Task cancelled by user');
         }
       } catch (error: any) {
         if (!controller.signal.aborted) {
           const message = error instanceof Error ? error.message : String(error);
-          updateLastAssistant(`[VERTEX ERROR] ${message}`);
+          updateAssistant(assistantId, `[VERTEX ERROR] ${message}`);
           setTaskStage('failed');
           setTaskLabel(message.length > 72 ? message.slice(0, 69) + '…' : message);
         }
       } finally {
         if (currentAbortController.current === controller) {
           currentAbortController.current = null;
+          activeAssistantId.current = undefined;
+          setTaskDurationMs(Date.now() - startedAt);
+          setIsStreaming(false);
         }
-        setTaskDurationMs(Date.now() - startedAt);
-        setIsStreaming(false);
       }
     })();
   };
@@ -490,6 +565,14 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
     const lowerQuery = query.toLowerCase();
 
+    if (lowerQuery === '/theme') {
+      setPromptValue('');
+      setThemeIndex(themeOptions.findIndex(option => option.name === theme));
+      setThemeError(undefined);
+      setThemePicker('command');
+      return;
+    }
+
     const missingArgumentUsage: Record<string, string> = {
       '/phantom': 'Usage: /phantom <red team prompt>\nExample: /phantom run full kill-chain on 192.168.1.50',
       '/recon': 'Usage: /recon <target>\nExample: /recon scan and enumerate subdomains for target.com',
@@ -512,7 +595,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
     if (lowerQuery === '?' || lowerQuery === '/?') {
       setPromptValue('');
-      appendTurn(query, 'Shortcuts:\n? - Show shortcuts\n/ - List commands\nCtrl+C - Exit\nUp/Down Arrow - Navigate history\nLeft/Right Arrow - Move cursor');
+      appendTurn(query, 'Shortcuts:\n? - Show shortcuts\n/ - List commands\nCtrl+C - Exit\nUp/Down Arrow - Navigate history\nLeft/Right Arrow - Move cursor' + (showPet ? '\nCtrl+P - Play with the Vertex pet' : ''));
       return;
     }
 
@@ -523,7 +606,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         '',
         ...COMMANDS.map((cmd) => `${cmd.name.padEnd(16)} ${cmd.desc}`),
         '',
-        'Tip: type / followed by a few letters to filter commands. Use Tab or ↑/↓ to select, then Enter.',
+        'Tip: type / followed by a few letters to filter commands. Use ↑/↓ to select, Tab to complete, then Enter to run.',
         'Use ? to view keyboard shortcuts.'
       ].join('\n'));
       return;
@@ -924,6 +1007,7 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
   const recallPromptHistory = (direction: -1 | 1) => {
     if (promptHistory.length === 0) return;
     if (direction === -1) {
+      if (historyCursor === null) savedDraft.current = { text: input, cursor: inputCursor };
       const nextIndex = historyCursor === null ? promptHistory.length - 1 : Math.max(0, historyCursor - 1);
       setHistoryCursor(nextIndex);
       setPromptValue(promptHistory[nextIndex]);
@@ -933,16 +1017,44 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     const nextIndex = historyCursor + 1;
     if (nextIndex >= promptHistory.length) {
       setHistoryCursor(null);
-      setPromptValue('');
+      setPromptValue(savedDraft.current.text, savedDraft.current.cursor);
       return;
     }
     setHistoryCursor(nextIndex);
     setPromptValue(promptHistory[nextIndex]);
   };
 
-  const handleCharInput = (char: string, key: any) => {
+  const insertPromptText = (text: string) => {
+    setPromptValue(input.slice(0, inputCursor) + text + input.slice(inputCursor), inputCursor + text.length);
+  };
+
+  const handleCharInput = (char: string, key: Key) => {
     if (key.ctrl && char === 'c') {
       exit();
+      return;
+    }
+
+    if (themePicker && !confirmPrompt) {
+      if (key.eventType === 'repeat' || key.eventType === 'release') return;
+      if (key.escape && themePicker === 'command') {
+        setThemePicker(null);
+      } else if (key.return || key.escape) {
+        const selected = key.escape ? theme : themeOptions[themeIndex].name;
+        if (!key.escape) {
+          try {
+            saveThemePreference(selected);
+          } catch {
+            setThemeError('Could not save the theme. Esc continues without saving.');
+            return;
+          }
+        }
+        setTheme(selected);
+        setThemePicker(null);
+      } else if (key.upArrow || key.downArrow) {
+        setThemeIndex(index => (index + (key.downArrow ? 1 : -1) + themeOptions.length) % themeOptions.length);
+      } else if (/^[1-6]$/.test(char)) {
+        setThemeIndex(Number(char) - 1);
+      }
       return;
     }
 
@@ -964,33 +1076,30 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
         return;
     }
 
-    const showSuggestions = input.startsWith('/') && !input.includes(' ');
-    const filteredCommands = showSuggestions 
-      ? COMMANDS.filter(cmd => cmd.name.startsWith(input.toLowerCase()))
-      : [];
-
-    if (key.tab && showSuggestions && filteredCommands.length > 0) {
-      setSelectedSuggestionIndex((prev) => (prev + 1) % filteredCommands.length);
+    if (showPet && key.ctrl && char === 'p') {
+      setPetInteraction(previous => previous + 1);
       return;
     }
 
-    if (char === ' ' && showSuggestions && filteredCommands.length > 0) {
+    const showSuggestions = /^\/[^\s]*$/.test(input);
+    const filteredCommands = commandSuggestions(input);
+
+    if (key.tab && filteredCommands.length > 0) {
       const completed = filteredCommands[selectedSuggestionIndex]?.name;
-      if (completed) {
-        setPromptValue(completed + ' ');
-        return;
-      }
+      if (completed) setPromptValue(completed);
+      return;
+    }
+
+    if ((key.return && (key.shift || key.meta)) || (key.ctrl && char === 'j')) {
+      insertPromptText('\n');
+      return;
     }
 
     if (key.return) {
-      if (showSuggestions && filteredCommands.length > 0) {
-        const completed = filteredCommands[selectedSuggestionIndex]?.name || input;
-        if (isStreaming) {
-          pushPromptHistory(completed);
-          setQueuedQueries((prev) => [...prev, completed]);
-          setPromptValue('');
-        } else {
-          submitPrompt(completed);
+      const verb = input.trim().match(/^(\/[a-z][a-z0-9_-]*)(?=[ \t]|$)/i)?.[1].toLowerCase();
+      if (verb && verb !== '/quit' && !COMMANDS.some(command => command.name === verb)) {
+        if (filteredCommands.length === 0) {
+          appendTurn(input, 'Unknown command. Type /help to see available commands.');
         }
         return;
       }
@@ -1035,22 +1144,23 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
     }
 
     if (key.leftArrow) {
-      setInputCursor((current) => clamp(current - 1, 0, input.length));
+      setInputCursor((current) => previousGrapheme(input, current));
       return;
     }
 
     if (key.rightArrow) {
-      setInputCursor((current) => clamp(current + 1, 0, input.length));
+      setInputCursor((current) => nextGrapheme(input, current));
       return;
     }
 
-    if (key.ctrl && char === 'a') {
-      setInputCursor(0);
+    if (key.home || (key.ctrl && char === 'a')) {
+      setInputCursor(inputCursor === 0 ? 0 : input.lastIndexOf('\n', inputCursor - 1) + 1);
       return;
     }
 
-    if (key.ctrl && char === 'e') {
-      setInputCursor(input.length);
+    if (key.end || (key.ctrl && char === 'e')) {
+      const end = input.indexOf('\n', inputCursor);
+      setInputCursor(end === -1 ? input.length : end);
       return;
     }
 
@@ -1061,90 +1171,65 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
 
     if (key.backspace) {
       if (inputCursor > 0) {
-        const nextValue = input.slice(0, inputCursor - 1) + input.slice(inputCursor);
-        setPromptValue(nextValue, inputCursor - 1);
+        const start = previousGrapheme(input, inputCursor);
+        setPromptValue(input.slice(0, start) + input.slice(inputCursor), start);
       }
       return;
     }
 
     if (key.delete) {
       if (inputCursor < input.length) {
-        const nextValue = input.slice(0, inputCursor) + input.slice(inputCursor + 1);
+        const nextValue = input.slice(0, inputCursor) + input.slice(nextGrapheme(input, inputCursor));
         setPromptValue(nextValue, inputCursor);
       }
       return;
     }
 
     if (char && !key.upArrow && !key.downArrow && !key.leftArrow && !key.rightArrow && !key.ctrl && !key.meta) {
-      const nextValue = input.slice(0, inputCursor) + char + input.slice(inputCursor);
-      setPromptValue(nextValue, inputCursor + char.length);
+      insertPromptText(normalizePaste(char));
     }
   };
 
-  useInput((char, key) => {
-    // Intercept multi-line pastes, but ignore single Enter keystrokes (\r or \n)
-    if (char && char.length > 1 && (char.includes('\r') || char.includes('\n'))) {
-      const parts = char.split(/\r\n|\r|\n/);
-      let tempTrusted = isTrusted;
-      for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        if (!part) continue;
+  usePaste(text => {
+    if (isTrusted && !confirmPrompt && !themePicker) insertPromptText(normalizePaste(text));
+  });
 
-        if (!tempTrusted) {
-          if (part === '1') {
-            process.env.VERTEX_WORKSPACE_ROOT = process.cwd();
-            setIsTrusted(true);
-            tempTrusted = true;
-          } else if (part === '2') {
-            exit();
-          }
-        } else {
-          submitPrompt(part);
-        }
-      }
+  useInput((char, key) => {
+    if (char.length > 1 && /[\r\n]/.test(char)) {
+      if (isTrusted && !confirmPrompt && !themePicker) insertPromptText(normalizePaste(char));
       return;
     }
-
     handleCharInput(char, key);
   });
 
-  if (!isTrusted) {
-    return <TrustGate trustCursor={trustCursor} width={layoutWidth} />;
+  if (themePicker === 'startup') {
+    return <ThemePicker firstRun selected={themeOptions[themeIndex].name} width={layoutWidth} rows={rows} error={themeError} />;
   }
+
+  if (!isTrusted) {
+    return <TrustGate trustCursor={trustCursor} width={layoutWidth} short={short} />;
+  }
+
+  const activeIndex = isStreaming ? history.findIndex(message => message.id === activeAssistantId.current) : -1;
+  const committed = activeIndex < 0 ? history : history.slice(0, activeIndex);
+  const active = activeIndex < 0 ? [] : history.slice(activeIndex);
 
   return (
     <Box flexDirection="column" width={layoutWidth}>
-      <VertexHeader />
-      {history.length === 0 && !isStreaming && (
-        <Box flexDirection="column" width={layoutWidth} borderStyle="round" borderColor="cyan" paddingX={2} paddingY={1} marginY={1}>
-          <Text color="cyan" bold>Welcome to VERTEX</Text>
-          <Text color="white">Your model-agnostic coding and security workspace.</Text>
-          <Box marginTop={1} flexDirection="column">
-            <Text color="gray">Try a task:</Text>
-            <Text color="green">› “Explain this repository and identify its main risks.”</Text>
-            <Text color="green">› “Find a bug, add a regression test, and run the tests.”</Text>
-            <Text color="green">› “/health”  ·  “/scope”  ·  “/help”</Text>
-          </Box>
-          <Box marginTop={1}>
-            <Text color="gray">Tip: use / to discover commands, ? for shortcuts, and Esc to cancel a running task.</Text>
-          </Box>
-        </Box>
-      )}
-      <Static items={isStreaming ? history.slice(0, -1) : history}>
-        {(h) => (
+      <Static items={[welcomeBlock, ...committed]}>
+        {(h) => h.role === 'welcome' ? (
+          <VertexHeader key={h.id} width={layoutWidth} short={short} model={process.env.AI_MODEL} cwd={process.cwd()} avatar={showPet} />
+        ) : (
           <Box key={h.id} marginY={1} flexDirection="column">
-            <Text color={h.role === 'user' ? 'cyan' : 'white'} dimColor={h.role === 'assistant'}>
+            <Text color={h.role === 'user' ? colors.accent : colors.text}>
                {h.role === 'user' ? '> ' : ''}{h.content}
             </Text>
           </Box>
         )}
       </Static>
-      {isStreaming && history.length > 0 && (
-        <ActiveStreamView 
-          content={history[history.length - 1].content} 
-          role={history[history.length - 1].role} 
-        />
-      )}
+      {active.map(message => (
+        <ActiveStreamView key={message.id} content={message.content} role={message.role} />
+      ))}
 
       {taskStage !== 'idle' && (
         <AgentStatusMonitor
@@ -1164,24 +1249,33 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
       )}
 
       {confirmPrompt && (
-        <PermissionPrompt 
-            command={confirmPrompt.message} 
-            onResolve={(approved) => {
-                confirmPrompt.resolve(approved);
-                setHistory((prev) => [
-                  ...prev,
-                  { 
-                    id: `prompt-result-${Date.now()}`, 
-                    role: 'assistant', 
-                    content: `${approved ? '✔' : '✖'} Action ${approved ? 'Approved' : 'Rejected'}: ${confirmPrompt.message}` 
-                  }
-                ]);
-                setConfirmPrompt(null);
-            }} 
+        <PermissionPrompt
+          key={confirmPrompt.id}
+          command={confirmPrompt.message}
+          onResolve={approved => {
+            confirmPrompt.resolve(approved);
+            setHistory(previous => [
+              ...previous,
+              {
+                id: `prompt-result-${confirmPrompt.id}`,
+                role: 'assistant',
+                content: `${approved ? '✔' : '✖'} Action ${approved ? 'Approved' : 'Rejected'}: ${formatApprovalAction(confirmPrompt.message)}`
+              }
+            ]);
+            setConfirmPrompt(current => current?.id === confirmPrompt.id ? null : current);
+          }}
         />
       )}
 
-      {!confirmPrompt && (
+      {!themePicker && !confirmPrompt && showPet && (
+        <VertexPet working={isStreaming} interaction={petInteraction} celebrate={taskStage === 'completed'} />
+      )}
+
+      {themePicker === 'command' && !confirmPrompt && (
+        <ThemePicker firstRun={false} selected={themeOptions[themeIndex].name} width={layoutWidth} rows={rows} error={themeError} />
+      )}
+
+      {!themePicker && !confirmPrompt && (
         <PromptBar 
           cursor={inputCursor} 
           input={input} 
@@ -1189,8 +1283,17 @@ function PromptBar({ input, cursor, isStreaming, selectedSuggestionIndex, queued
           selectedSuggestionIndex={selectedSuggestionIndex} 
           queuedQueries={queuedQueries}
           width={layoutWidth}
+          height={rows}
         />
       )}
+      <TerminalStatus
+        width={layoutWidth}
+        short={short}
+        approval={Boolean(confirmPrompt)}
+        running={isStreaming}
+        mode={getAutonomyMode()}
+        model={process.env.AI_MODEL}
+      />
     </Box>
   );
 };
