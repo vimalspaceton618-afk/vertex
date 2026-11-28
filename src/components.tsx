@@ -1,101 +1,57 @@
-import React, { useState } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import React, { useRef, useState } from 'react';
+import { Box, Text, useInput } from 'ink';
+import { icons, motion } from './terminal/theme.js';
+import { useTerminalColors } from './terminal/ThemeContext.js';
+import { WelcomePet } from './terminal/VertexPet.js';
 import Spinner from 'ink-spinner';
+import { stripVTControlCharacters } from 'node:util';
 import { APP_VERSION_LABEL } from './version.js';
 
 export function getTerminalLayoutWidth(columns: number | undefined): number {
   const measuredColumns = Number.isFinite(columns) && typeof columns === 'number' && columns > 0 ? columns : 80;
-  return Math.max(40, Math.min(120, measuredColumns));
+  return Math.min(120, measuredColumns);
 }
 
-const RobotLogo = () => (
-  <Box flexDirection="column" alignItems="center" marginY={1}>
-    <Text color="cyan"> ▄▄▄▄▄▄▄▄ </Text>
-    <Text color="cyan">██▀████▀██</Text>
-    <Text color="cyan">██████████</Text>
-    <Text color="cyan"> █  ██  █ </Text>
-  </Box>
-);
+function terminalMetadata(value: string): string {
+  return stripVTControlCharacters(value).replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, ' ');
+}
 
-export const VertexHeader: React.FC<{ version?: string; activeAgent?: string }> = ({
-  version = APP_VERSION_LABEL,
-  activeAgent = 'VERTEX'
-}) => {
-  const { stdout } = useStdout();
-  const terminalWidth = getTerminalLayoutWidth(stdout.columns);
-  const innerWidth = terminalWidth - 2;
-  const compact = terminalWidth < 72;
-  const panelWidth = Math.max(18, Math.floor(innerWidth / 2) - 1);
-  const repeatCount = Math.max(0, innerWidth - activeAgent.length - version.length - 5);
-  const activeModel = process.env.AI_MODEL || 'provider not configured';
-  const currentCwd = process.cwd();
-  const cwdDisplay = currentCwd.length > panelWidth - 4 ? `…${currentCwd.slice(-(panelWidth - 5))}` : currentCwd;
-
+export function VertexHeader({ width, short, model, cwd, avatar }: {
+  width: number;
+  short: boolean;
+  model?: string;
+  cwd: string;
+  avatar: boolean;
+}) {
+  const colors = useTerminalColors();
   return (
-    <Box flexDirection="column" width={terminalWidth}>
-      {/* Top Border with Title */}
-      <Box flexDirection="row" flexWrap="nowrap">
-        <Text color="cyan">╭─ </Text>
-        <Text color="cyan" bold>{activeAgent} {version} </Text>
-        <Text color="cyan">{"─".repeat(repeatCount)}╮</Text>
+    <Box width={width} marginBottom={short ? 0 : 1}>
+      {avatar && <Box marginRight={2}><WelcomePet /></Box>}
+      <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+        <Text color={colors.accent} bold wrap="truncate-end">Welcome to VERTEX · {APP_VERSION_LABEL}</Text>
+        {width >= 30 && !short && <Text color={colors.muted} wrap="truncate-middle">{terminalMetadata(cwd)}</Text>}
+        {width >= 30 && !short && <Text color={colors.muted} wrap="truncate-end">{model ? terminalMetadata(model) : 'Model not configured'}</Text>}
+        {width >= 50 && !short && <Text color={colors.muted}>Type /help to discover commands.</Text>}
       </Box>
-
-      {/* Main Content Area */}
-      {compact ? (
-        <Box flexDirection="column" borderStyle="round" borderColor="cyan" paddingX={1} width={terminalWidth}>
-          <Text bold>Welcome to VERTEX</Text>
-          <Text color="gray">{activeModel}</Text>
-          <Text color="gray">{cwdDisplay}</Text>
-          <Text color="cyan">Try /help · ? for shortcuts</Text>
-        </Box>
-      ) : (
-      <Box flexDirection="row">
-        {/* Left Border */}
-        <Box flexDirection="column" width={1}>
-          <Text color="cyan">{'│\n│\n│\n│\n│\n│\n│\n│\n│'}</Text>
-        </Box>
-
-        {/* Left Pane (Welcome & Details) */}
-        <Box width={panelWidth} flexDirection="column" alignItems="center" paddingX={1}>
-          <Text bold>Welcome back!</Text>
-          <RobotLogo />
-          <Text color="gray">{activeModel}</Text>
-          <Text color="gray">{cwdDisplay}</Text>
-        </Box>
-
-        {/* Center Divider */}
-        <Box flexDirection="column" width={1}>
-          <Text color="cyan">{'│\n│\n│\n│\n├\n│\n│\n│\n│'}</Text>
-        </Box>
-
-        {/* Right Pane (Tips & Activity) */}
-        <Box width={panelWidth} flexDirection="column" paddingX={1}>
-          <Text color="cyan" bold>Tips for getting started</Text>
-          <Text>Use / or type /help to discover commands.</Text>
-          <Text>Workspace: current directory</Text>
-          
-          <Box flexDirection="row" marginTop={1}>
-            <Text color="cyan">{"─".repeat(Math.max(8, panelWidth - 4))}</Text>
-          </Box>
-          
-          <Text color="cyan" bold>Recent activity</Text>
-          <Text color="gray">Activity appears as tasks run.</Text>
-        </Box>
-
-        {/* Right Border */}
-        <Box flexDirection="column" width={1}>
-          <Text color="cyan">{'│\n│\n│\n│\n┤\n│\n│\n│\n│'}</Text>
-        </Box>
-      </Box>
-      )}
-      {!compact && (
-        <Box flexDirection="row">
-          <Text color="cyan">╰{"─".repeat(panelWidth)}┴{"─".repeat(panelWidth)}╯</Text>
-        </Box>
-      )}
     </Box>
   );
-};
+}
+
+export function TerminalStatus({ width, short, approval, running, mode, model }: {
+  width: number;
+  short: boolean;
+  approval: boolean;
+  running: boolean;
+  mode: string;
+  model?: string;
+}) {
+  const colors = useTerminalColors();
+  const state = approval ? 'Approval required' : running ? 'Esc to interrupt' : mode;
+  const extras = approval || running ? [mode] : [];
+  if (!short && width >= 50) extras.push(model ? terminalMetadata(model) : 'Model not configured');
+  if (!short && !approval && !running && width >= 50) extras.push('? for shortcuts');
+  return <Text color={approval ? colors.warning : colors.muted} wrap="truncate-end">{[state, ...extras].join(' · ')}</Text>;
+}
 
 export type TaskLifecycleStatus = 'starting' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -103,16 +59,17 @@ export const AgentStatusMonitor: React.FC<{ message: string; status?: TaskLifecy
   message,
   status = 'running'
 }) => {
+  const colors = useTerminalColors();
   const active = status === 'starting' || status === 'running';
-  const color = status === 'completed' ? 'green' : status === 'failed' ? 'red' : status === 'cancelled' ? 'yellow' : 'cyan';
+  const color = status === 'completed' ? colors.success : status === 'failed' ? colors.error : status === 'cancelled' ? colors.warning : colors.accent;
   const label = status === 'starting' ? 'STARTING' : status === 'running' ? 'RUNNING' : status === 'completed' ? 'COMPLETED' : status === 'failed' ? 'FAILED' : 'CANCELLED';
 
   return (
     <Box marginY={1} paddingX={1} flexDirection="column">
       <Box>
-        {active ? <Text color={color}><Spinner type="dots" /> </Text> : <Text color={color} bold>{status === 'completed' ? '✓ ' : status === 'failed' ? '✗ ' : '■ '}</Text>}
+        {active && motion ? <Text color={color}><Spinner type="dots" /> </Text> : <Text color={color} bold>{(status === 'completed' ? icons.success : status === 'failed' ? icons.error : icons.waiting) + ' '}</Text>}
         <Text color={color} bold>{label}</Text>
-        <Text color={active ? color : 'gray'}> · {message}</Text>
+        <Text color={active ? color : colors.muted}> · {message}</Text>
       </Box>
     </Box>
   );
@@ -126,33 +83,34 @@ export interface TaskResultSummaryProps {
 }
 
 export const TaskResultSummary: React.FC<TaskResultSummaryProps> = ({ status, durationMs, output }) => {
+  const colors = useTerminalColors();
   const diffFiles = Array.from(output.matchAll(/^\+\+\+ b\/(.+)$/gm), (match) => match[1]);
   const mentionedFiles = Array.from(output.matchAll(/(?:modified|created|deleted|changed)\s+(?:file\s+)?[:"]?([\w./@-]+\.[\w-]+)/gi), (match) => match[1]);
   const files = Array.from(new Set([...diffFiles, ...mentionedFiles])).slice(0, 6);
   const testLine = output.match(/(?:# tests\s+\d+[\s\S]{0,160}# pass\s+\d+[\s\S]{0,80}# fail\s+0|(?:tests?|suites?)\s+passed\s*[:=]?\s*\d+|(?:all\s+)?\d+\s+tests?\s+passed|(?:tests?|suites?)\s+failed\s*[:=]?\s*\d+|\d+\s+failed(?:,|\s+and\s+)\s*\d+\s+passed)/i);
   const duration = durationMs < 1000 ? String(durationMs) + ' ms' : (durationMs / 1000).toFixed(1) + ' s';
-  const statusColor = status === 'completed' ? 'green' : status === 'failed' ? 'red' : 'yellow';
+  const statusColor = status === 'completed' ? colors.success : status === 'failed' ? colors.error : colors.warning;
 
   return (
     <Box borderStyle="round" borderColor={statusColor} paddingX={1} paddingY={1} flexDirection="column" marginY={1}>
       <Box justifyContent="space-between">
         <Text bold color={statusColor}>TASK SUMMARY · {status.toUpperCase()}</Text>
-        <Text dimColor>{duration}</Text>
+        <Text color={colors.muted}>{duration}</Text>
       </Box>
       <Box marginTop={1} flexDirection="column">
-        <Text color="cyan" bold>Changed files (detected)</Text>
+        <Text color={colors.accent} bold>Changed files (detected)</Text>
         {files.length > 0
-          ? files.map((file) => <Text key={file} dimColor>• {file}</Text>)
-          : <Text dimColor>No changed-file evidence detected in the response.</Text>}
+          ? files.map((file) => <Text key={file} color={colors.muted}>• {file}</Text>)
+          : <Text color={colors.muted}>No changed-file evidence detected in the response.</Text>}
       </Box>
       <Box marginTop={1} flexDirection="column">
-        <Text color="cyan" bold>Test evidence (detected)</Text>
+        <Text color={colors.accent} bold>Test evidence (detected)</Text>
         {testLine
-          ? <Text dimColor>{testLine[0]}</Text>
-          : <Text color="yellow">No explicit test result detected. Verification is unconfirmed.</Text>}
+          ? <Text color={colors.muted}>{testLine[0]}</Text>
+          : <Text color={colors.warning}>No explicit test result detected. Verification is unconfirmed.</Text>}
       </Box>
       <Box marginTop={1}>
-        <Text dimColor>Output: {output.length.toLocaleString()} characters · Based on returned text, not independent repository inspection.</Text>
+        <Text color={colors.muted}>Output: {output.length.toLocaleString()} characters · Based on returned text, not independent repository inspection.</Text>
       </Box>
     </Box>
   );
@@ -169,23 +127,24 @@ export const ToolExecutionCard: React.FC<ToolExecutionCardProps> = ({
   command,
   status
 }) => {
+  const colors = useTerminalColors();
   return (
     <Box
       borderStyle="single"
-      borderColor="dim"
+      borderColor={colors.border}
       paddingX={1}
       paddingY={0}
       flexDirection="column"
       marginY={1}
     >
       <Box justifyContent="space-between">
-        <Text color="cyan" bold>{toolName}</Text>
-        {status === 'running' && <Text color="yellow"><Spinner type="dots" /> Running</Text>}
-        {status === 'success' && <Text color="green">✔ Passed</Text>}
-        {status === 'error' && <Text color="red">✖ Failed</Text>}
+        <Text color={colors.accent} bold>{toolName}</Text>
+        {status === 'running' && <Text color={colors.warning}>{motion ? <Spinner type="dots" /> : icons.waiting} Running</Text>}
+        {status === 'success' && <Text color={colors.success}>✔ Passed</Text>}
+        {status === 'error' && <Text color={colors.error}>✖ Failed</Text>}
       </Box>
       <Box paddingLeft={2} marginTop={1}>
-        <Text dimColor>&gt; {command}</Text>
+        <Text color={colors.muted}>&gt; {command}</Text>
       </Box>
     </Box>
   );
@@ -200,12 +159,13 @@ export interface Finding {
 }
 
 export const AuditFindingsTable: React.FC<{ findings: Finding[] }> = ({ findings }) => {
+  const colors = useTerminalColors();
   const getSeverityColor = (sev: Severity) => {
     switch (sev) {
-      case 'CRITICAL': return 'red';
-      case 'MEDIUM': return 'yellow';
-      case 'LOW': return 'cyan';
-      default: return 'white';
+      case 'CRITICAL': return colors.error;
+      case 'MEDIUM': return colors.warning;
+      case 'LOW': return colors.accent;
+      default: return colors.text;
     }
   };
 
@@ -218,10 +178,10 @@ export const AuditFindingsTable: React.FC<{ findings: Finding[] }> = ({ findings
       <Text bold underline>Security Audit Findings</Text>
       
       {/* Table Header */}
-      <Box marginY={1} borderBottom borderColor="dim">
-        <Box width="15%"><Text dimColor>SEVERITY</Text></Box>
-        <Box width="25%"><Text dimColor>CATEGORY</Text></Box>
-        <Box width="60%"><Text dimColor>DETAIL</Text></Box>
+      <Box marginY={1} borderBottom borderColor={colors.border}>
+        <Box width="15%"><Text color={colors.muted}>SEVERITY</Text></Box>
+        <Box width="25%"><Text color={colors.muted}>CATEGORY</Text></Box>
+        <Box width="60%"><Text color={colors.muted}>DETAIL</Text></Box>
       </Box>
 
       {/* Table Rows */}
@@ -236,7 +196,7 @@ export const AuditFindingsTable: React.FC<{ findings: Finding[] }> = ({ findings
             <Text>{finding.category}</Text>
           </Box>
           <Box width="60%">
-            <Text dimColor>{finding.detail}</Text>
+            <Text color={colors.muted}>{finding.detail}</Text>
           </Box>
         </Box>
       ))}
@@ -244,63 +204,45 @@ export const AuditFindingsTable: React.FC<{ findings: Finding[] }> = ({ findings
   );
 };
 
-export const PermissionPrompt: React.FC<{ command: string; onResolve?: (approved: boolean) => void }> = ({
-  command,
-  onResolve
-}) => {
-  const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+export function formatApprovalAction(command: string): string {
+  return command.replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, character =>
+    '\\u' + character.charCodeAt(0).toString(16).padStart(4, '0')
+  );
+}
+
+export function PermissionPrompt({ command, onResolve }: {
+  command: string;
+  onResolve: (approved: boolean) => void;
+}) {
+  const colors = useTerminalColors();
+  const [selection, setSelection] = useState<boolean | null>(null);
+  const resolved = useRef(false);
 
   useInput((input, key) => {
-    if (status !== 'pending') return;
+    if (resolved.current || key.eventType === 'repeat' || key.eventType === 'release') return;
 
-    if (input.toLowerCase() === 'y') {
-      setStatus('approved');
-      onResolve?.(true);
-    } else if (input.toLowerCase() === 'n' || key.escape) {
-      setStatus('rejected');
-      onResolve?.(false);
+    if (key.escape || (key.return && selection !== null)) {
+      resolved.current = true;
+      onResolve(!key.escape && selection === true);
+      return;
     }
+
+    const choice = input.toLowerCase();
+    if (choice === 'y' || choice === '1' || key.upArrow) setSelection(true);
+    if (choice === 'n' || choice === '2' || key.downArrow) setSelection(false);
   });
 
-  if (status === 'approved') {
-    return (
-      <Box marginY={1}>
-        <Text color="green">✔ Action Approved: </Text>
-        <Text dimColor>{command}</Text>
-      </Box>
-    );
-  }
-
-  if (status === 'rejected') {
-    return (
-      <Box marginY={1}>
-        <Text color="red">✖ Action Rejected: </Text>
-        <Text dimColor>{command}</Text>
-      </Box>
-    );
-  }
-
   return (
-    <Box
-      borderStyle="round"
-      borderColor="yellow"
-      paddingX={1}
-      flexDirection="column"
-      marginY={1}
-    >
-      <Box>
-        <Text color="yellow" bold>⚠ VERTEX Agent Request</Text>
-      </Box>
-      <Box marginTop={1} paddingLeft={2}>
-        <Text dimColor>{command}</Text>
-      </Box>
-      <Box marginTop={1}>
-        <Text>Allow execution? (</Text>
-        <Text color="green" bold>y</Text>
-        <Text>/</Text>
-        <Text color="red" bold>n</Text>
-        <Text>)</Text>
-      </Box>
+    <Box flexDirection="column" marginY={1}>
+      <Text color={colors.warning} bold>Permission required</Text>
+      <Text>{formatApprovalAction(command)}</Text>
+      <Text color={selection === true ? colors.accent : colors.text}>
+        {selection === true ? icons.prompt : ' '} 1. Allow once (Y)
+      </Text>
+      <Text color={selection === false ? colors.accent : colors.text}>
+        {selection === false ? icons.prompt : ' '} 2. Deny (N)
+      </Text>
+      <Text color={colors.muted}>Select, then Enter. Esc denies.</Text>
     </Box>
   );
-};
+}

@@ -100,7 +100,7 @@ test('no-argument launch remains wired to the interactive Ink UI', () => {
     'no-argument launch must skip Commander parsing so the TUI can start'
   );
   assert.ok(
-    cliSource.includes('const { waitUntilExit } = render(<App />);'),
+    cliSource.includes('const { waitUntilExit } = render(<App />, { incrementalRendering: nativeTerminal });'),
     'the no-argument path must render the interactive UI and wait for exit'
   );
 });

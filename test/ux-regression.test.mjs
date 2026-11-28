@@ -19,19 +19,14 @@ test('command palette includes help and URL workflows implemented by the UI', ()
   assert.equal(new Set(commands).size, commands.length, 'palette command names are unique');
 });
 
-test('welcome header adapts to terminal width and has a narrow layout', () => {
-  assert.match(components, /useStdout/, 'header should read terminal dimensions');
-  assert.match(components, /stdout\.columns/, 'header should use terminal column width');
-  assert.match(components, /terminalWidth\s*<\s*72/, 'header should switch to compact mode in narrow terminals');
-  assert.match(components, /provider not configured/, 'unconfigured providers should not be represented as a default model');
-  assert.doesNotMatch(components, /Note: Launched in home directory\./, 'welcome panel should not claim a fixed launch directory');
+test('welcome uses a single scrollback block and adapts its metadata to the terminal', () => {
+  assert.match(ui, /useWindowSize\(\)/);
+  assert.match(ui, /<Static items=\{\[welcomeBlock,/);
+  assert.equal((ui.match(/<VertexHeader\b/g) ?? []).length, 1);
+  assert.match(components, /width >= 30 && !short/);
+  assert.match(components, /Model not configured/);
+  assert.match(components, /Type \/help to discover commands/);
 });
-
-test('welcome command tips match the discoverable commands', () => {
-  assert.match(components, /\/help/, 'welcome panel should advertise help');
-  assert.match(components, /Activity appears as tasks run\./, 'welcome panel should not imply the activity feed is populated before tasks run');
-});
-
 
 test('safe init and doctor are registered as CLI subcommands before application startup', () => {
   assert.ok(cli.includes("program.command('doctor')"), 'doctor CLI subcommand should exist');
@@ -51,16 +46,14 @@ test('CLI, package metadata, and TUI share one version source', () => {
   assert.match(cli, /import \{ APP_VERSION \} from '\.\/version\.js';/);
   assert.match(cli, /\.version\(APP_VERSION\)/, 'Commander should use the shared package version');
   assert.match(components, /import \{ APP_VERSION_LABEL \} from '\.\/version\.js';/);
-  assert.match(components, /version = APP_VERSION_LABEL/, 'TUI header should use the shared package version label');
+  assert.match(components, /\{APP_VERSION_LABEL\}/, 'TUI header should use the shared package version label');
 });
 
 test('header, welcome panel, trust gate, and prompt use the shared responsive width', () => {
   assert.match(components, /export function getTerminalLayoutWidth\(columns: number \| undefined\)/);
-  assert.match(components, /getTerminalLayoutWidth\(stdout\.columns\)/, 'header should use shared layout width');
-  assert.match(ui, /const layoutWidth = getTerminalLayoutWidth\(stdout\.columns\)/);
-  assert.match(ui, /<Box flexDirection="column" width=\{layoutWidth\}>\s*<VertexHeader \/>/);
-  assert.match(ui, /<Box flexDirection="column" width=\{layoutWidth\} borderStyle="round" borderColor="cyan"/);
-  assert.match(ui, /<TrustGate trustCursor=\{trustCursor\} width=\{layoutWidth\} \/>/);
+  assert.match(ui, /const layoutWidth = getTerminalLayoutWidth\(columns\)/);
+  assert.match(ui, /<VertexHeader key=\{h.id\} width=\{layoutWidth\}/);
+  assert.match(ui, /<TrustGate trustCursor=\{trustCursor\} width=\{layoutWidth\} short=\{short\} \/>/);
   assert.match(ui, /queuedQueries=\{queuedQueries\}\s*width=\{layoutWidth\}/);
   assert.doesNotMatch(ui, /width=\{97\}|repeat\(97\)|width="100%"/, 'primary layout should not use mismatched hard-coded widths');
 });
